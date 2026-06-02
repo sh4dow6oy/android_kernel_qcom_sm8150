@@ -64,12 +64,12 @@ jobs:
             STRIP=llvm-strip"
 
           # Injectare config-uri LTO în defconfig-ul original
-          echo "CONFIG_THINLTO=y" >> arch/arm64/configs/sm8150_sec_defconfig
-          echo "# CONFIG_LTO_NONE is not set" >> arch/arm64/configs/sm8150_sec_defconfig
-          echo "CONFIG_LTO_CLANG=y" >> arch/arm64/configs/sm8150_sec_defconfig
+          echo "CONFIG_THINLTO=y" >> arch/arm64/configs/sm8150_sec_r5q_eur_open_defconfig
+          echo "# CONFIG_LTO_NONE is not set" >> arch/arm64/configs/sm8150_sec_r5q_eur_open_defconfig
+          echo "CONFIG_LTO_CLANG=y" >> arch/arm64/configs/sm8150_sec_r5q_eur_open_defconfig
           
           # 1. Generare fișier .config în folderul out
-          make $BUILD_VAR sm8150_sec_defconfig
+          make $BUILD_VAR sm8150_sec_r5q_eur_open_defconfig
           
           # 2. Compilare efectivă (Am scos dtbo.img din target)
           make $BUILD_VAR Image.gz-dtb dtbs || exit 1
