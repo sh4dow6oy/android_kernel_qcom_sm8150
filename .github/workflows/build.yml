@@ -48,7 +48,7 @@ jobs:
           # Definim flag-urile de compilare compatibile cu Clang-ul din NDK pentru SM8150
           KERNEL_MAKE_ENV="DTC_EXT=$(pwd)/tools/dtc CONFIG_BUILD_ARM64_DT_OVERLAY=y"
           
-          BUILD_VAR="-j$(nproc) \
+            BUILD_VAR="-j$(nproc) \
             -C $(pwd) \
             O=$(pwd)/out \
             $KERNEL_MAKE_ENV \
@@ -61,7 +61,8 @@ jobs:
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip"
+            STRIP=llvm-strip \
+            LLVM_IAS=1"
 
           # Injectare config-uri LTO în defconfig-ul original
           echo "CONFIG_THINLTO=y" >> arch/arm64/configs/sm8150_sec_r5q_eur_open_defconfig
