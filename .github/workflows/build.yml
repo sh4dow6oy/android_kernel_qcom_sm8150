@@ -8,26 +8,121 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: "Set up build environment"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - name: Install build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential bc bison flex libssl-dev make libncurses5-dev git curl clang lld \
-            libelf-dev erofs-utils android-sdk-libsparse-utils build-essential automake autoconf libtool pkg-config fuse3 e2fsprogs pv liblz4-dev uuid-dev \
-            libfuse3-dev fuse3 f2fs-tools fuse2fs attr zlib1g-dev rsync \
-            device-tree-compiler lz4 xz-utils zlib1g-dev openjdk-17-jdk gcc g++ python3 python-is-python3 p7zip-full \
-            build-essential git libssl-dev bc flex bison \
-            libncurses5-dev libncurses-dev cpio zip unzip \
-            python3 curl rsync kmod libelf-dev \
-            lz4 tar openssl python3-pip \
-            gcc clang
-          wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb && sudo dpkg -i libtinfo5_6.3-2ubuntu0.1_amd64.deb             
+            build-essential \
+            git \
+            curl \
+            unzip \
+            wget \
+            zip \
+            zstd \
+            libssl-dev \
+            bison \
+            flex
 
-      - name: "Import kernel source"
-        uses: actions/checkout@v4    
+      - name: Download latest Google clang
+        run: |
+          wget -O llvm.tar.zst https://github.com/Ylarod/setup-ndk-clang/releases/download/prebuilt/clang-linux-x86-ndk-r29-r563880c.tar.zst
+          mkdir llvm-21; cd llvm-21
+          tar -I unzstd -xf ../llvm.tar.zst
+          rm ../llvm.tar.zst
 
-      - name: "Setting permission"
-        run: chmod +x build.sh
+      - name: Build kernel
+        run: |
+          export ANDROID_BUILD_TOP=$(pwd)
+          export ARCH=arm64
+          mkdir -p out
+          
+          export PATH=$(pwd)/llvm-21/bin:$PATH
+          
+          # Pregătire mediu de compilare
+          KERNEL_MAKE_ENV="DTC_EXT=$(pwd)/tools/dtc CONFIG_BUILD_ARM64_DT_OVERLAY=y"
+          BUILD_VAR="-j$(nproc) -C $(pwd) O=$(pwd)/out $KERNEL_MAKE_ENV ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1"
 
-      - name: "Build for specific device"
-        run: ./build.sh
+          # Injectare config-uri LTO în defconfig-ul original
+          echo "CONFIG_THINLTO=y" >> arch/arm64/configs/sm8150_sec_defconfig
+          echo "# CONFIG_LTO_NONE is not set" >> arch/arm64/configs/sm8150_sec_defconfig
+          echo "CONFIG_LTO_CLANG=y" >> arch/arm64/configs/sm8150_sec_defconfig
+          
+          # Generare configurație (.config) în folderul out
+          make $BUILD_VAR sm8150_sec_defconfig
+          
+          # Compilare Kernel și DTB-uri
+          make $BUILD_VAR Image.gz-dtb dtbo.img || exit 1
+          
+      - name: "Generate DTBO Image"
+        run: |
+          # Găsim utilitarul mkdtimg în repository
+          MKDTIMG=$(find . -name "mkdtimg" -not -path "*/.*" | head -n 1)
+          
+          if [ -z "$MKDTIMG" ]; then
+            echo "EROARE: Nu s-a găsit utilitarul mkdtimg în repository!"
+            exit 1
+          fi
+          
+          chmod +x "$MKDTIMG"
+          
+          # Căutăm fișierele .dtbo în folderul de output (out/) generat de compilare
+          DTBO_FILES=$(find out/ -path "*/arch/arm64/boot/dts/samsung/renovation/*.dtbo")
+          
+          if [ -n "$DTBO_FILES" ]; then
+            DTBO_OUT="out/arch/arm64/boot"
+            mkdir -p "$DTBO_OUT"
+            
+            echo "Fișierele DTBO corecte găsite pentru r5q:"
+            echo "$DTBO_FILES"
+            
+            # Creăm imaginea dtbo.img combinându-le
+            $MKDTIMG create "$DTBO_OUT/dtbo.img" $DTBO_FILES
+            echo "dtbo.img a fost creat cu succes în $DTBO_OUT/dtbo.img!"
+          else
+            echo "EROARE: Nu s-au găsit fișiere .dtbo în out/.../samsung/renovation/. Verifică log-urile de compilare!"
+            exit 1
+          fi
+
+      - name: "Package with AnyKernel3"
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel
+          rm -rf AnyKernel/.git
+          
+          # Căutăm dinamic fișierele rezultate în folderul out/
+          NEW_IMAGE=$(find out/ -name "Image.gz-dtb" | head -n 1)
+          FINAL_DTBO=$(find out/ -name "dtbo.img" | head -n 1)
+          
+          if [ -z "$NEW_IMAGE" ] || [ -z "$FINAL_DTBO" ]; then
+            echo "EROARE CRITICĂ: Lipsește fișierul Image.gz-dtb sau dtbo.img în folderul out!"
+            exit 1
+          fi
+          
+          # Copiem binarele în AnyKernel
+          cp "$NEW_IMAGE" AnyKernel/Image.gz-dtb
+          cp "$FINAL_DTBO" AnyKernel/dtbo.img
+          
+          # Creăm folderul pentru module și copiem toate fișierele .ko din out/
+          mkdir -p AnyKernel/modules
+          find out/ -name "*.ko" -exec cp {} AnyKernel/modules/ \; 2>/dev/null || true
+          
+          # Dezactivăm verificarea strictă de dispozitiv ca să nu dea erori în TWRP
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel/anykernel.sh
+          
+          # Împachetăm totul în ZIP-ul final flash-abil
+          cd AnyKernel
+          zip -r9 ../Kernel-r5q-AnyKernel-Flashable.zip *
+          cd ..
+
+      - name: "Upload Flashable Artifacts"
+        uses: actions/upload-artifact@v4
+        with:
+          name: Samsung-SM8150-Final-Kernel
+          path: |
+            Kernel-r5q-AnyKernel-Flashable.zip
+            out/arch/arm64/boot/dtbo.img
