@@ -42,22 +42,37 @@ jobs:
           export ARCH=arm64
           mkdir -p out
           
+          # Adăugăm toolchain-ul în PATH
           export PATH=$(pwd)/llvm-21/bin:$PATH
           
-          # Pregătire mediu de compilare
+          # Definim flag-urile de compilare compatibile cu Clang-ul din NDK pentru SM8150
           KERNEL_MAKE_ENV="DTC_EXT=$(pwd)/tools/dtc CONFIG_BUILD_ARM64_DT_OVERLAY=y"
-          BUILD_VAR="-j$(nproc) -C $(pwd) O=$(pwd)/out $KERNEL_MAKE_ENV ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1"
+          
+          BUILD_VAR="-j$(nproc) \
+            -C $(pwd) \
+            O=$(pwd)/out \
+            $KERNEL_MAKE_ENV \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip"
 
           # Injectare config-uri LTO în defconfig-ul original
           echo "CONFIG_THINLTO=y" >> arch/arm64/configs/sm8150_sec_defconfig
           echo "# CONFIG_LTO_NONE is not set" >> arch/arm64/configs/sm8150_sec_defconfig
           echo "CONFIG_LTO_CLANG=y" >> arch/arm64/configs/sm8150_sec_defconfig
           
-          # Generare configurație (.config) în folderul out
+          # 1. Generare fișier .config în folderul out
           make $BUILD_VAR sm8150_sec_defconfig
           
-          # Compilare Kernel și DTB-uri
-          make $BUILD_VAR Image.gz-dtb dtbo.img || exit 1
+          # 2. Compilare efectivă (Am scos dtbo.img din target)
+          make $BUILD_VAR Image.gz-dtb dtbs || exit 1
           
       - name: "Generate DTBO Image"
         run: |
