@@ -170,7 +170,7 @@ enum {
 	SFC_25W,
 };
 
-#if defined(CONFIG_CCIC_NOTIFIER)
+/* 🛠️ ELIBERAT COMPLET: Am șters #if defined(CONFIG_CCIC_NOTIFIER) de aici pentru a face structura completă global */
 struct sec_bat_pdic_info {
 	unsigned int pdo_index;
 	bool apdo;
@@ -190,7 +190,6 @@ struct sec_bat_pdic_list {
 	unsigned int num_fpdo;
 	unsigned int num_apdo;
 };
-#endif
 
 #if defined(CONFIG_BATTERY_SWELLING)
 enum swelling_mode_state {
