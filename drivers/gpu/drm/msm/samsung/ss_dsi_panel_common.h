@@ -28,6 +28,29 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #ifndef SS_DSI_PANEL_COMMON_H
 #define SS_DSI_PANEL_COMMON_H
 
+#ifndef SUPPORT_PANEL_REVISION
+#define SUPPORT_PANEL_REVISION 3  /* Valoarea standard pentru reviziile de panou Samsung (de obicei 3 sau 4) */
+#endif
+
+#ifndef SS_DSI_CMD_SET_MAX
+#define SS_DSI_CMD_SET_MAX     32 /* Sau valoarea maximă a array-ului de comenzi DSI */
+#define SS_DSI_CMD_SET_START   0
+#endif
+
+#ifndef RX_CMD_START
+#define RX_CMD_START           0
+#define RX_CMD_END             100
+#define RX_SELF_DISP_DEBUG     101
+#define RX_SELF_MASK_CHECK     102
+#endif
+
+#ifndef TX_AID_SUBDIVISION
+#define TX_AID_SUBDIVISION       10
+#define TX_PAC_AID_SUBDIVISION   11
+#define TX_IRC_SUBDIVISION       12
+#define TX_PAC_IRC_SUBDIVISION   13
+#endif
+
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
