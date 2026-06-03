@@ -1071,7 +1071,7 @@ static ssize_t ss_gamma_interpolation_test_store(struct device *dev,
 		goto end;
 	}
 
-	tx_buf = pcmds->cmds[2].msg.tx_buf;
+	tx_buf = (u8 *)pcmds->cmds[2].msg.tx_buf;
 	tx_buf[1] = val1;
 	tx_buf[2] = val2;
 	tx_buf[3] = val3;
