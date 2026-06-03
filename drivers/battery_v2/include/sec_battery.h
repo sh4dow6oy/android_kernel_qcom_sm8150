@@ -173,15 +173,12 @@ enum {
 #if defined(CONFIG_CCIC_NOTIFIER)
 struct sec_bat_pdic_info {
 	unsigned int pdo_index;
-#if defined(CONFIG_PDIC_PD30) && defined(CONFIG_DIRECT_CHARGING)
 	bool apdo;
 	unsigned int max_voltage;
 	unsigned int min_voltage;
 	unsigned int max_current;
-#else
 	unsigned int input_voltage;
 	unsigned int input_current;
-#endif
 };
 
 #define MAX_PDO_NUM 8
@@ -189,11 +186,9 @@ struct sec_bat_pdic_list {
 	struct sec_bat_pdic_info pd_info[MAX_PDO_NUM]; /* 5V ~ 12V */
 	unsigned int now_pd_index;
 	unsigned int max_pd_count;
-#if defined(CONFIG_PDIC_PD30)
 	bool now_isApdo;
 	unsigned int num_fpdo;
 	unsigned int num_apdo;
-#endif
 };
 #endif
 
@@ -219,7 +214,6 @@ struct adc_sample_info {
 	int index;
 };
 
-#if defined(CONFIG_BATTERY_SAMSUNG_MHS)
 struct cable_info {
 	int cable_type;
 	int muic_cable_type;
@@ -232,21 +226,18 @@ struct cable_info {
 	unsigned int max_charge_power;		/* max charge power (mW) */
 	unsigned int pd_max_charge_power;		/* max charge power for pd (mW) */
 
-#if defined(CONFIG_CCIC_NOTIFIER)
 	bool pdic_attach;
 	bool pdic_ps_rdy;
 	bool hv_pdo;
 
 	struct pdic_notifier_struct pdic_info;
 	struct sec_bat_pdic_list pd_list;
-#endif
 	int pd_usb_attached;
 
 #if defined(CONFIG_AFC_CHARGER_MODE)
 	char *hv_chg_name;
 #endif
 };
-#endif
 
 struct sec_ttf_data;
 
@@ -269,9 +260,7 @@ struct sec_battery_info {
 	int pd_usb_attached;
 #if defined(CONFIG_USB_TYPEC_MANAGER_NOTIFIER)
 	struct notifier_block usb_typec_nb;
-#if defined(CONFIG_BATTERY_SAMSUNG_MHS)
 	struct notifier_block usb_typec_main_nb;
-#endif
 #else
 #if defined(CONFIG_CCIC_NOTIFIER)
 	struct notifier_block pdic_nb;
@@ -281,13 +270,11 @@ struct sec_battery_info {
 #endif
 #endif
 
-#if defined(CONFIG_CCIC_NOTIFIER)
 	bool pdic_attach;
 	bool pdic_ps_rdy;
 	bool hv_pdo;
 	struct pdic_notifier_struct pdic_info;
 	struct sec_bat_pdic_list pd_list;
-#endif
 	bool update_pd_list;
 
 #if defined(CONFIG_VBUS_NOTIFIER)
@@ -467,20 +454,16 @@ struct sec_battery_info {
 	bool is_recharging;
 	int wdt_kick_disable;
 
-#if defined(CONFIG_BATTERY_SAMSUNG_MHS)
 	struct cable_info *select;
 	struct cable_info *main;
 	struct cable_info *sub;
-#endif
 
 	bool is_jig_on;
 	int cable_type;
 	int muic_cable_type;
 	int extended_cable_type;
 
-#if defined(CONFIG_BATTERY_SAMSUNG_MHS)
 	int charging_port;
-#endif
 	struct wake_lock cable_wake_lock;
 	struct delayed_work cable_work;
 	struct wake_lock vbus_wake_lock;
