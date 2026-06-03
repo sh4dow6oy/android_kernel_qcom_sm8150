@@ -26,7 +26,6 @@ Copyright (C) 2015, Samsung Electronics. All rights reserved.
  */
 
 #include "ss_dsi_panel_common.h"
-#include "ss_dsi_panel_cmd.h"
 #include <linux/preempt.h>
 
 static void ss_panel_recovery(struct samsung_display_driver_data *vdd);
