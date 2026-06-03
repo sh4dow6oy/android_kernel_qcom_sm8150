@@ -79,6 +79,29 @@ enum samsung_custom_cmd_sets {
 	TX_FLASH_GAMMA,
 	TX_FLASH_GAMMA_POST,
 	RX_FLASH_GAMMA
+	TX_SPI_IF_SEL_ON,
+	TX_SPI_IF_SEL_OFF,
+	TX_CCD_ON,
+	TX_CCD_OFF,
+	RX_CCD_STATE,
+	TX_DEMUX_STRESS_ON,
+	TX_DEMUX_STRESS_OFF,
+	TX_ISC_DATA_THRESHOLD,
+	TX_STM_ENABLE,
+	TX_PARTIAL_DISP_ON,
+	TX_PARTIAL_DISP_OFF,
+	TX_DIA_ON,
+	TX_DIA_OFF,
+	TX_FP_GREEN_CIRCLE_ON,
+	TX_FP_GREEN_CIRCLE_OFF,
+
+	/* REPARARE: Identificatori pentru citirea bufferelor de debug din ss_dsi_panel_debug.c */
+	RX_LDI_DEBUG0,
+	RX_LDI_DEBUG2,
+	RX_LDI_DEBUG3,
+	RX_LDI_DEBUG4,
+	RX_LDI_DEBUG5,
+	RX_LDI_DEBUG_LOGBUF
 };
 
 #include <linux/module.h>
