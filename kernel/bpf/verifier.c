@@ -25,6 +25,17 @@
 
 #include "disasm.h"
 
+#ifndef bpf_jit_blinding_enabled
+#ifdef CONFIG_BPF_JIT
+extern bool bpf_jit_blinding_enabled(struct bpf_prog *prog);
+#else
+static inline bool bpf_jit_blinding_enabled(struct bpf_prog *prog)
+{
+	return false;
+}
+#endif
+#endif
+
 static const struct bpf_verifier_ops * const bpf_verifier_ops[] = {
 #define BPF_PROG_TYPE(_id, _name, prog_ctx_type, kern_ctx_type) \
 	[_id] = & _name ## _verifier_ops,
