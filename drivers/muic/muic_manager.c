@@ -1000,7 +1000,7 @@ static int muic_manager_get_property(struct power_supply *psy,
 	switch (psp) {
 	case POWER_SUPPLY_PROP_AFC_CHARGER_MODE:
 		break;
-	case POWER_SUPPLY_PROP_PM_VCHGIN:
+	case POWER_SUPPLY_PROP_VCHGIN:
 		break;
 	default:
 		return -EINVAL;
@@ -1021,7 +1021,7 @@ static int muic_manager_set_property(struct power_supply *psy,
 	switch (psp) {
 	case POWER_SUPPLY_PROP_AFC_CHARGER_MODE:
 		break;
-	case POWER_SUPPLY_PROP_PM_VCHGIN:
+	case POWER_SUPPLY_PROP_VCHGIN:
 		MUIC_PDATA_FUNC_MULTI_PARAM(muic_if->pm_chgin_irq,
 			muic_if->muic_data, val->intval, &ret);
 		break;
