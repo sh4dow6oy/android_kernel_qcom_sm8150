@@ -51,6 +51,23 @@ Copyright (C) 2012, Samsung Electronics. All rights reserved.
 #define TX_PAC_IRC_SUBDIVISION   13
 #endif
 
+#ifndef TX_GAMMA_MODE1_INTERPOLATION
+#define TX_GAMMA_MODE1_INTERPOLATION     40
+#define TX_COPR_ENABLE                   41
+#define TX_DYNAMIC_HLPM_ENABLE           42
+#define TX_DYNAMIC_HLPM_DISABLE          43
+#define TX_SELF_IDLE_AOD_ENTER           44
+#define TX_SELF_IDLE_TIMER_ON            45
+#define TX_SELF_IDLE_MOVE_ON_PATTERN1    46
+#define TX_SELF_IDLE_TIMER_OFF           47
+#define TX_SELF_IDLE_MOVE_OFF            48
+#define TX_SELF_IDLE_AOD_EXIT            49
+#define TX_CABC_OFF_DUTY                 50
+#define TX_CABC_ON                       51
+#define TX_CABC_ON_DUTY                  52
+#define TX_CABC_OFF                      53
+#endif
+
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
