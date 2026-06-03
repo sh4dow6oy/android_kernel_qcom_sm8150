@@ -12,6 +12,8 @@
 
 #include "include/sec_adc.h"
 
+#define DEBUG
+
 struct adc_list {
 	const char *name;
 	struct iio_channel *channel;
@@ -54,7 +56,7 @@ static void sec_bat_adc_ap_init(struct platform_device *pdev,
 	}
 
 	for (i  = 0; i < SEC_BAT_ADC_CHANNEL_NUM; i++)
-		pr_debug("%s %s - %s\n",
+		pr_info("%s %s - %s\n",
 			__func__, batt_adc_list[i].name, batt_adc_list[i].is_used ? "used" : "not used");
 }
 
@@ -66,9 +68,15 @@ static int sec_bat_adc_ap_read(struct sec_battery_info *battery, int channel)
 
 	if (batt_adc_list[channel].is_used) {
 		do {
-			ret = (batt_adc_list[channel].is_used) ?
-			iio_read_channel_processed(batt_adc_list[channel].channel, &data) : 0;
-			retry_cnt--;
+			if (battery->pdata->temp_channel_raw) {
+				ret = (batt_adc_list[channel].is_used) ?
+				iio_read_channel_raw(batt_adc_list[channel].channel, &data) : 0;
+				retry_cnt--;
+			} else {
+				ret = (batt_adc_list[channel].is_used) ?
+				iio_read_channel_processed(batt_adc_list[channel].channel, &data) : 0;
+				retry_cnt--;
+			} 
 		} while ((retry_cnt > 0) && (data < 0));
 	}
 
@@ -83,6 +91,12 @@ static int sec_bat_adc_ap_read(struct sec_battery_info *battery, int channel)
 
 static void sec_bat_adc_ap_exit(void)
 {
+	int i = 0;
+	for (i = 0; i < SEC_BAT_ADC_CHANNEL_NUM; i++) {
+		if (batt_adc_list[i].is_used) {
+			iio_channel_release(batt_adc_list[i].channel);
+		}
+	}
 	return;
 }
 
@@ -268,14 +282,14 @@ bool sec_bat_get_value_by_adc(
 	int mid = 0;
 	const sec_bat_adc_table_data_t *temp_adc_table = {0 , };
 	unsigned int temp_adc_table_size = 0;
-
+	
 	if (check_type == SEC_BATTERY_TEMP_CHECK_FAKE) {
 		value->intval = 300;
 		return true;
 	}
 
 	temp_adc = sec_bat_get_adc_data(battery, channel, battery->pdata->adc_check_count);
-	if (temp_adc < 0)
+	if ((temp_adc < 0) || (check_type == SEC_BATTERY_TEMP_CHECK_NONE))
 		return false;
 
 	switch (channel) {
@@ -320,7 +334,7 @@ bool sec_bat_get_value_by_adc(
 		temp_adc_table_size =
 			battery->pdata->sub_bat_temp_adc_table_size;
 		battery->sub_bat_temp_adc = temp_adc;
-		break;		
+		break;
 	case SEC_BAT_ADC_CHANNEL_BLKT_TEMP:
 		temp_adc_table = battery->pdata->blkt_temp_adc_table;
 		temp_adc_table_size =
@@ -363,7 +377,7 @@ bool sec_bat_get_value_by_adc(
 temp_by_adc_goto:
 	value->intval = temp;
 
-	dev_dbg(battery->dev,
+	dev_info(battery->dev,
 		"%s:[%d] Temp(%d), Temp-ADC(%d)\n",
 		__func__,channel, temp, temp_adc);
 
@@ -382,7 +396,7 @@ int sec_bat_convert_adc_to_temp(unsigned int adc_ch, int temp_adc)
 	unsigned int temp_adc_table_size = 0;
 
 	if(!local_battery) {
-		pr_debug("%s: battery data is not ready yet\n", __func__);
+		pr_info("%s: battery data is not ready yet\n", __func__);
 		goto temp_to_adc_goto;
 	}
 
@@ -453,7 +467,7 @@ int sec_bat_get_thr_voltage(unsigned int adc_ch, int temp)
 	unsigned int temp_adc_table_size = 0;
 
 	if(!local_battery) {
-		pr_debug("%s: battery data is not ready yet\n", __func__);
+		pr_info("%s: battery data is not ready yet\n", __func__);
 		goto get_thr_voltage_goto;
 	}
 

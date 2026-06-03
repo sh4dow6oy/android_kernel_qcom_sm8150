@@ -210,8 +210,11 @@ struct s2mu106_fuelgauge_data {
 
 	int i_socr_coeff;
 	int t_socr_coeff;
+#if !defined(CONFIG_SEC_A71_PROJECT)
 	int t_compen_coeff;
 	int low_t_compen_coeff;
+#endif
+
 #endif
 #if (BATCAP_LEARN)
 	bool learn_start;

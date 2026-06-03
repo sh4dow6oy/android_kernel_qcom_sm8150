@@ -18,9 +18,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 #include <linux/mfd/samsung/s2mu107.h>
+#include <linux/sec_batt.h>
 #include <linux/delay.h>
 #include "include/charger/s2mu107_direct_charger.h"
 #include "include/s2mu107_pmeter.h"
+#include "include/sec_charging_common.h"
 #include <linux/time.h>
 
 #ifdef CONFIG_USB_HOST_NOTIFY
@@ -31,6 +33,8 @@
 #define HV_ALARM_INTERVAL	5
 #define RUSH_ALARM_INTERVAL	1
 #define SLEEP_ALARM_INTERVAL	30
+
+extern int factory_mode;
 
 static char *s2mu107_supplied_to[] = {
 	"battery",
@@ -66,9 +70,11 @@ static void s2mu107_dc_state_trans_enqueue(struct s2mu107_dc_data *charger, s2mu
 static void s2mu107_dc_set_sc_prop(struct s2mu107_dc_data *charger, enum power_supply_property psp, int val);
 static int s2mu107_dc_send_verify(struct s2mu107_dc_data *charger);
 static void s2mu107_dc_refresh_auto_pps(struct s2mu107_dc_data *charger, unsigned int vol, unsigned int iin);
+#if 0
+static void s2mu107_dc_approach_target_curr_auto(struct s2mu107_dc_data *charger);
+#endif
 static void s2mu107_dc_approach_target_curr_manual(struct s2mu107_dc_data *charger);
 static int s2mu107_dc_check_vbat_validity(struct s2mu107_dc_data *charger);
-static void s2mu107_dc_vchgin_compensation(struct s2mu107_dc_data *charger);
 
 static const char *pmeter_to_str(s2mu107_pmeter_id_t n)
 {
@@ -178,7 +184,7 @@ static void s2mu107_dc_test_read(struct i2c_client *i2c)
 	}
 
 	/* print buffer */
-	pr_debug("[DC]%s: %s\n", __func__, str);
+	pr_info("[DC]%s: %s\n", __func__, str);
 
 }
 
@@ -221,13 +227,13 @@ static int s2mu107_dc_delay(struct s2mu107_dc_data *charger, int delay_ms)
 static void s2mu107_dc_enable(struct s2mu107_dc_data *charger, int onoff)
 {
 	if (onoff > 0) {
-		pr_debug("%s, direct charger enable\n", __func__);
+		pr_info("%s, direct charger enable\n", __func__);
 		wake_lock(&charger->wake_lock);
 		charger->is_charging = true;
 		s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL0, S2MU107_DC_ENABLE, DC_EN_MASK);
 	} else {
 		s2mu107_dc_forced_enable(charger, S2MU107_DC_DISABLE);
-		pr_debug("%s, direct charger disable\n", __func__);
+		pr_info("%s, direct charger disable\n", __func__);
 		s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL0, S2MU107_DC_DISABLE, DC_EN_MASK);
 	}
 }
@@ -235,11 +241,11 @@ static void s2mu107_dc_enable(struct s2mu107_dc_data *charger, int onoff)
 static void s2mu107_dc_forced_enable(struct s2mu107_dc_data *charger, int onoff)
 {
 	if (onoff) {
-		pr_debug("%s, forced en enable\n", __func__);
+		pr_info("%s, forced en enable\n", __func__);
 		wake_lock(&charger->wake_lock);
 		s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL0, DC_FORCED_EN_MASK, DC_FORCED_EN_MASK);
 	} else {
-		pr_debug("%s, forced en disable\n", __func__);
+		pr_info("%s, forced en disable\n", __func__);
 		s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL0, S2MU107_DC_DISABLE, DC_FORCED_EN_MASK);
 	}
 }
@@ -287,7 +293,7 @@ static void s2mu107_dc_platform_state_update(struct s2mu107_dc_data *charger)
 		return;
 	}
 
-	pr_debug("%s, updated state : %d\n", __func__, state);
+	pr_info("%s, updated state : %d\n", __func__, state);
 	ret = power_supply_get_property(psy, (enum power_supply_property)POWER_SUPPLY_EXT_PROP_DIRECT_CHARGER_MODE, &value);
 	if (ret < 0)
 		pr_err("%s: Fail to execute property\n", __func__);
@@ -296,6 +302,7 @@ static void s2mu107_dc_platform_state_update(struct s2mu107_dc_data *charger)
 		value.intval = state;
 		ret = power_supply_set_property(psy,
 			(enum power_supply_property)POWER_SUPPLY_EXT_PROP_DIRECT_CHARGER_MODE, &value);
+
 	}
 }
 
@@ -320,7 +327,7 @@ static int s2mu107_dc_set_comm_fail(struct s2mu107_dc_data *charger)
 		return ret;
 
 	data |= TA_COMMUNICATION_FAIL_MASK;
-	pr_debug("%s, \n", __func__);
+	pr_info("%s, \n", __func__);
 
 	s2mu107_write_reg(charger->i2c, S2MU107_DC_CTRL22, data);
 
@@ -341,7 +348,7 @@ static int s2mu107_dc_get_topoff_current(struct s2mu107_dc_data *charger)
 		data = 0x0F;
 
 	topoff_current = data * 100 + 500;
-	pr_debug("%s, topoff_current : %d(0x%2x)\n", __func__, topoff_current, data);
+	pr_info("%s, topoff_current : %d(0x%2x)\n", __func__, topoff_current, data);
 
 	return topoff_current;
 }
@@ -357,7 +364,7 @@ static void s2mu107_dc_set_topoff_current(struct s2mu107_dc_data *charger, int t
 	else
 		data = 0x0F;
 
-	pr_debug("%s, topoff_current : %d(0x%2x)\n", __func__, topoff_current, data);
+	pr_info("%s, topoff_current : %d(0x%2x)\n", __func__, topoff_current, data);
 
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL15,
 				data << DC_TOPOFF_SHIFT, DC_TOPOFF_MASK);
@@ -374,7 +381,7 @@ static int s2mu107_dc_set_cc_band_width(struct s2mu107_dc_data *charger, int ban
 
 	target = (band_current - DC_CC_BAND_WIDTH_MIN_MA) / DC_CC_BAND_WIDTH_STEP_MA;
 
-	pr_debug("%s, band_current : %d(0x%2x)\n", __func__, band_current, target);
+	pr_info("%s, band_current : %d(0x%2x)\n", __func__, band_current, target);
 
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL15,
 				target, DC_CC_BAND_WIDTH_MASK);
@@ -399,7 +406,7 @@ static int s2mu107_dc_get_float_voltage(struct s2mu107_dc_data *charger)
 	else
 		float_voltage = data * 10 + 3600;
 
-	pr_debug("%s, float_voltage : %d(0x%2x)\n", __func__, float_voltage, data);
+	pr_info("%s, float_voltage : %d(0x%2x)\n", __func__, float_voltage, data);
 
 	return float_voltage;
 }
@@ -415,7 +422,7 @@ static void s2mu107_dc_set_float_voltage(struct s2mu107_dc_data *charger, int fl
 	else
 		data = 0x7F;
 
-	pr_debug("%s, float_voltage : %d(0x%2x)\n", __func__, float_voltage, data);
+	pr_info("%s, float_voltage : %d(0x%2x)\n", __func__, float_voltage, data);
 	charger->floatVol = float_voltage;
 
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL1,
@@ -434,7 +441,7 @@ static int s2mu107_dc_get_chgin_input_current(struct s2mu107_dc_data *charger)
 
 	input_current = data * 50 + 50;
 
-	pr_debug("%s,chgin input_current : %d(0x%2x)\n", __func__, input_current, data);
+	pr_info("%s,chgin input_current : %d(0x%2x)\n", __func__, input_current, data);
 	return input_current;
 }
 
@@ -450,7 +457,7 @@ static int s2mu107_dc_get_wcin_input_current(struct s2mu107_dc_data *charger)
 
 	input_current = data * 50 + 50;
 
-	pr_debug("%s,wcin input_current : %d(0x%2x)\n", __func__, input_current, data);
+	pr_info("%s,wcin input_current : %d(0x%2x)\n", __func__, input_current, data);
 	return input_current;
 }
 
@@ -463,7 +470,7 @@ static int s2mu107_dc_get_input_current(struct s2mu107_dc_data *charger)
 
 	input_current = chgin_current + wcin_current;
 
-	pr_debug("%s, input_current : %d\n", __func__, input_current);
+	pr_info("%s, input_current : %d\n", __func__, input_current);
 	return input_current;
 }
 
@@ -473,7 +480,7 @@ static void s2mu107_dc_set_chgin_input_current(struct s2mu107_dc_data *charger, 
 	data = (input_current - 50) / 50;
 	if (data >= 0x7F)
 		data = 0x7E;
-	pr_debug("%s, chgin input_current : %d(0x%2x)\n", __func__, input_current, data);
+	pr_info("%s, chgin input_current : %d(0x%2x)\n", __func__, input_current, data);
 
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL2,
 				data << DC_SET_CHGIN_ICHG_SHIFT, DC_SET_CHGIN_ICHG_MASK);
@@ -486,7 +493,7 @@ static void s2mu107_dc_set_wcin_input_current(struct s2mu107_dc_data *charger, i
 	if (data == 0x7F)
 		data = 0x7E;
 
-	pr_debug("%s, wcin input_current : %d(0x%2x)\n", __func__, input_current, data);
+	pr_info("%s, wcin input_current : %d(0x%2x)\n", __func__, input_current, data);
 
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL4,
 				data << DC_SET_WCIN_ICHG_SHIFT, DC_SET_WCIN_ICHG_MASK);
@@ -504,7 +511,7 @@ static void s2mu107_dc_set_input_current(struct s2mu107_dc_data *charger, int in
 	chgin_current = input_current / 2;
 	wcin_current = input_current - chgin_current;
 
-	pr_debug("%s, chgin : %d, wcin : %d\n", __func__, chgin_current, wcin_current);
+	pr_info("%s, chgin : %d, wcin : %d\n", __func__, chgin_current, wcin_current);
 
 	s2mu107_dc_set_chgin_input_current(charger, chgin_current);
 	s2mu107_dc_set_wcin_input_current(charger, wcin_current);
@@ -527,7 +534,7 @@ static int s2mu107_dc_get_charging_current(struct s2mu107_dc_data *charger)
 	else
 		charging_current = data * 100 + 100;
 
-	pr_debug("%s, charging_current : %d(0x%2x)\n", __func__, charging_current, data);
+	pr_info("%s, charging_current : %d(0x%2x)\n", __func__, charging_current, data);
 	return charging_current;
 }
 
@@ -536,7 +543,7 @@ static void s2mu107_dc_set_charging_current(struct s2mu107_dc_data *charger, int
 	u8 data = 0x00;
 
 	if (mode == S2MU107_DC_MODE_TA_CC)
-		charging_current += 500;
+	charging_current += 500;
 
 	if (charging_current <= 100)
 		data = 0x00;
@@ -545,25 +552,42 @@ static void s2mu107_dc_set_charging_current(struct s2mu107_dc_data *charger, int
 	else
 		data = 0x63;
 
-	pr_debug("%s, charging_current : %d(0x%2x)\n", __func__, charging_current, data);
+	pr_info("%s, charging_current : %d(0x%2x)\n", __func__, charging_current, data);
 
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL13,
 				data << DC_SET_CC_SHIFT, DC_SET_CC_MASK);
 }
 
+static void s2mu107_dc_set_iin_off(struct s2mu107_dc_data *charger, int iin_off)
+{
+	u8 data = 0x00;
+
+	if (iin_off <= SET_IIN_OFF_MIN_MA)
+		data = 0x00;
+	else if (iin_off > SET_IIN_OFF_MIN_MA && iin_off <= SET_IIN_OFF_MAX_MA)
+		data = (iin_off - SET_IIN_OFF_MIN_MA) / SET_IIN_OFF_STEP_MA;
+	else
+		data = SET_IIN_OFF_MASK;
+
+	pr_info("%s, iin_off : %d(0x%2x)\n", __func__, iin_off, data);
+
+	s2mu107_update_reg(charger->i2c, S2MU107_DC_CD_OTP_01,
+				data << SET_IIN_OFF_SHIFT, SET_IIN_OFF_MASK);
+}
+
 static void s2mu107_dc_set_vsys_dcmode(struct s2mu107_dc_data *charger, s2mu107_dc_ctrl_t en)
 {
-	pr_debug("%s, en : %d\n", __func__, (int)en);
+	pr_info("%s, en : %d\n", __func__, (int)en);
 
 	switch (en) {
 	case S2MU107_DC_ENABLE:
 		if (charger->rev_id <= 1) {
 			/* 0x1C[5:0] = 11_1111 (CHGIN IVR, WCIN IVR level to 4.7V) */
 			s2mu107_update_reg(charger->i2c, S2MU107_SC_CTRL4_DC,
-					0x7 << SET_IVR_CHGIN_SHIFT, SET_IVR_CHGIN_MASK);
+				0x7 << SET_IVR_CHGIN_SHIFT, SET_IVR_CHGIN_MASK);
 			s2mu107_update_reg(charger->i2c, S2MU107_SC_CTRL4_DC,
-					0x7 << SET_IVR_WCIN_SHIFT, SET_IVR_WCIN_MASK);
-		}
+				0x7 << SET_IVR_WCIN_SHIFT, SET_IVR_WCIN_MASK);
+			}
 
 		if (charger->rev_id == 0) {
 			s2mu107_write_reg(charger->i2c, 0xCC, 0x7F);
@@ -571,16 +595,15 @@ static void s2mu107_dc_set_vsys_dcmode(struct s2mu107_dc_data *charger, s2mu107_
 			s2mu107_write_reg(charger->i2c, 0xC6, 0x3F);
 			usleep_range(1000, 1100);
 			s2mu107_update_reg(charger->i2c, 0x20, 0x9, 0xF);
-		} else {
+			} else {
 			/*
 			 * 0x7A  CC[3:0] = 4'b1001
 			 * (SET_SYS_OVP_F[1:0] / SET_SYS_OVP_R[1:0] = 4.6V / 4.7V)
 			 */
 			s2mu107_update_reg(charger->i2c, S2MU107_SC_OTP_96,
-					0x2 << SET_VSYS_OVP_FALLING_SHIFT, SET_VSYS_OVP_FALLING_MASK);
+				0x2 << SET_VSYS_OVP_FALLING_SHIFT, SET_VSYS_OVP_FALLING_MASK);
 			s2mu107_update_reg(charger->i2c, S2MU107_SC_OTP_96,
-					0x1 << SET_VSYS_OVP_RISING_SHIFT, SET_VSYS_OVP_RISING_MASK);
-
+				0x1 << SET_VSYS_OVP_RISING_SHIFT, SET_VSYS_OVP_RISING_MASK);
 			usleep_range(1000, 1100);
 
 			/*
@@ -604,23 +627,24 @@ static void s2mu107_dc_set_vsys_dcmode(struct s2mu107_dc_data *charger, s2mu107_
 			 * SET_VF_VSYS[3:0] = 4.4V
 			 */
 			s2mu107_update_reg(charger->i2c, S2MU107_SC_CTRL8_DC,
-					0x8 << SET_VF_VSYS_SHIFT, SET_VF_VSYS_MASK);
+				0x8 << SET_VF_VSYS_SHIFT, SET_VF_VSYS_MASK);
 			usleep_range(1000, 1100);
+			
 			/*
 			 * SET_SYS_OVP_F[1:0] / SET_SYS_OVP_R[1:0] = 4.5V / 4.6V
 			 */
 			s2mu107_update_reg(charger->i2c, S2MU107_SC_OTP_96,
-					0x1 << SET_VSYS_OVP_FALLING_SHIFT, SET_VSYS_OVP_FALLING_MASK);
+				0x1 << SET_VSYS_OVP_FALLING_SHIFT, SET_VSYS_OVP_FALLING_MASK);
 			s2mu107_update_reg(charger->i2c, S2MU107_SC_OTP_96,
-					0x0 << SET_VSYS_OVP_RISING_SHIFT, SET_VSYS_OVP_RISING_MASK);
+				0x0 << SET_VSYS_OVP_RISING_SHIFT, SET_VSYS_OVP_RISING_MASK);
 		}
-
+		
 		if (charger->rev_id <= 1) {
 			/* 0x1C[5:0] = 10_1101 (CHGIN IVR, WCIN IVR level to 4.5V) */
 			s2mu107_update_reg(charger->i2c, S2MU107_SC_CTRL4_DC,
-					0x5 << SET_IVR_CHGIN_SHIFT, SET_IVR_CHGIN_MASK);
+				0x5 << SET_IVR_CHGIN_SHIFT, SET_IVR_CHGIN_MASK);
 			s2mu107_update_reg(charger->i2c, S2MU107_SC_CTRL4_DC,
-					0x5 << SET_IVR_WCIN_SHIFT, SET_IVR_WCIN_MASK);
+				0x5 << SET_IVR_WCIN_SHIFT, SET_IVR_WCIN_MASK);
 		}
 		break;
 	}
@@ -629,8 +653,8 @@ static void s2mu107_dc_set_vsys_dcmode(struct s2mu107_dc_data *charger, s2mu107_
 static void s2mu107_dc_set_dual_buck(struct s2mu107_dc_data *charger, s2mu107_dc_ctrl_t en)
 {
 	union power_supply_propval value;
-
-	pr_debug("%s, en : %d\n", __func__, (int)en);
+	
+	pr_info("%s, en : %d\n", __func__, (int)en);
 	switch (en) {
 	case S2MU107_DC_ENABLE:
 		value.intval = 1;
@@ -643,30 +667,14 @@ static void s2mu107_dc_set_dual_buck(struct s2mu107_dc_data *charger, s2mu107_dc
 	}
 }
 
-static void s2mu107_dc_set_iin_off(struct s2mu107_dc_data *charger, int iin_off)
-{
-	u8 data = 0x00;
-
-	if (iin_off <= SET_IIN_OFF_MIN_MA)
-		data = 0x00;
-	else if (iin_off > SET_IIN_OFF_MIN_MA && iin_off <= SET_IIN_OFF_MAX_MA)
-		data = (iin_off - SET_IIN_OFF_MIN_MA) / SET_IIN_OFF_STEP_MA;
-	else
-		data = SET_IIN_OFF_MASK;
-
-	pr_debug("%s, iin_off : %d(0x%2x)\n", __func__, iin_off, data);
-
-	s2mu107_update_reg(charger->i2c, S2MU107_DC_CD_OTP_01,
-				data << SET_IIN_OFF_SHIFT, SET_IIN_OFF_MASK);
-}
-
 static void s2mu107_dc_set_irq_unmask(struct s2mu107_dc_data *charger)
 {
 	s2mu107_write_reg(charger->i2c, 0xB, 0x0);
-	s2mu107_write_reg(charger->i2c, 0xC, 0x20);
+	s2mu107_write_reg(charger->i2c, 0xC, 0x0);
 	s2mu107_write_reg(charger->i2c, 0xD, 0x0);
 	s2mu107_write_reg(charger->i2c, 0xE, 0x0);
 }
+
 
 static int s2mu107_dc_fg_prop_param(enum power_supply_property prop)
 {
@@ -693,7 +701,7 @@ static int s2mu107_dc_get_fg_value(struct s2mu107_dc_data *charger, enum power_s
 		pr_err("%s: Fail to execute property\n", __func__);
 
 	get = value.intval;
-	pr_debug("%s, %s : (%d)\n", __func__, prop_to_str(prop), get);
+	pr_info("%s, %s : (%d)\n", __func__, prop_to_str(prop), get);
 	return get;
 }
 
@@ -715,12 +723,13 @@ static bool s2mu107_dc_is_wdt_reset(struct s2mu107_dc_data *charger)
 
 	chg_fault_status = (data & SC_FAULT_STATUS_MASK) >> SC_FAULT_STATUS_SHIFT;
 
-	pr_debug("%s, fault status : 0x%X\n", __func__, chg_fault_status);
+	pr_info("%s, fault status : 0x%X\n", __func__, chg_fault_status);
 	if (chg_fault_status & (SC_STATUS_WD_SUSPEND | SC_STATUS_WD_RST))
 		return true;
 
 	return false;
 }
+
 
 static int s2mu107_dc_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
@@ -741,7 +750,7 @@ static int s2mu107_dc_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		/* TODO : health check */
-		pr_debug("%s: health check & wdt clear\n", __func__);
+		pr_info("%s: health check & wdt clear\n", __func__);
 		s2mu107_dc_wdt_clear(charger);
 		if (charger->ps_health == POWER_SUPPLY_HEALTH_UNKNOWN)
 			charger->ps_health = POWER_SUPPLY_HEALTH_GOOD;
@@ -773,7 +782,7 @@ static int s2mu107_dc_get_property(struct power_supply *psy,
 
 		switch (ext_psp) {
 		case POWER_SUPPLY_EXT_PROP_MONITOR_WORK:
-			pr_debug("%s: mon context triggered from the platform drv\n", __func__);
+			pr_info("%s: mon context triggered from the platform drv\n", __func__);
 			//cancel_delayed_work(&charger->dc_monitor_work);
 			//schedule_delayed_work(&charger->dc_monitor_work, msecs_to_jiffies(0));
 			break;
@@ -791,7 +800,7 @@ static int s2mu107_dc_get_property(struct power_supply *psy,
 				case DC_STATE_START_CC:
 					val->intval = SEC_DIRECT_CHG_MODE_DIRECT_ON_ADJUST;
 					break;
-				case DC_STATE_CC:
+ 				case DC_STATE_CC:
 				case DC_STATE_SLEEP_CC:
 				case DC_STATE_CV:
 				case DC_STATE_WAKEUP_CC:
@@ -811,21 +820,21 @@ static int s2mu107_dc_get_property(struct power_supply *psy,
 			case SEC_BATTERY_IIN_MA:
 				data = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN) +
 					s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
-				pr_debug("%s, IIN_MA : %d\n", __func__, data);
+				pr_info("%s, IIN_MA : %d\n", __func__, data);
 				break;
 			case SEC_BATTERY_IIN_UA:
 				data = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN) +
 					s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
 				data = data * 1000;
-				pr_debug("%s, IIN_UA : %d\n", __func__, data);
+				pr_info("%s, IIN_UA : %d\n", __func__, data);
 				break;
 			case SEC_BATTERY_VIN_MA:
 				data = s2mu107_dc_get_pmeter(charger, PMETER_ID_VCHGIN);
-				pr_debug("%s, VIN_MV : %d\n", __func__, data);
+				pr_info("%s, VIN_MV : %d\n", __func__, data);
 				break;
 			case SEC_BATTERY_VIN_UA:
 				data = s2mu107_dc_get_pmeter(charger, PMETER_ID_VCHGIN) * 1000;
-				pr_debug("%s, VIN_UV : %d\n", __func__, data);
+				pr_info("%s, VIN_UV : %d\n", __func__, data);
 				break;
 			default:
 				data = 0;
@@ -833,7 +842,10 @@ static int s2mu107_dc_get_property(struct power_supply *psy,
 			}
 			val->intval = data;
 			break;
-
+#if 0
+		case POWER_SUPPLY_EXT_PROP_MEASURE_SYS:
+			break;
+#endif
 		default:
 			return -EINVAL;
 		}
@@ -867,7 +879,7 @@ static int s2mu107_dc_set_property(struct power_supply *psy,
 			charger->step_iin_ma = 1050;
 		else
 			charger->step_iin_ma = val->intval;
-		pr_debug("%s, set iin : %d", __func__, charger->step_iin_ma);
+		pr_info("%s, set iin : %d", __func__, charger->step_iin_ma);
 		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_SET_CURRENT_MAX);
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_AVG:
@@ -883,6 +895,7 @@ static int s2mu107_dc_set_property(struct power_supply *psy,
 				s2mu107_dc_state_manager(charger, DC_TRANS_DETACH);
 		} else {
 			if (charger->cable_type || !s2mu107_dc_is_wdt_reset(charger)) {
+				s2mu107_dc_state_manager(charger, DC_TRANS_DETACH);
 				charger->is_charging = true;
 				charger->ps_health = POWER_SUPPLY_HEALTH_GOOD;
 				s2mu107_dc_state_manager(charger, DC_TRANS_CHG_ENABLED);
@@ -897,7 +910,7 @@ static int s2mu107_dc_set_property(struct power_supply *psy,
 			break;
 		case POWER_SUPPLY_EXT_PROP_DIRECT_PPS_FAILED:
 			/* PS RDY Timeout case */
-			pr_debug("%s, PS RDY Timeout case", __func__);
+			pr_info("%s, PS RDY Timeout case", __func__);
 			s2mu107_dc_set_comm_fail(charger);
 			s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_FAIL_INT);
 			break;
@@ -905,7 +918,7 @@ static int s2mu107_dc_set_property(struct power_supply *psy,
 			break;
 		case POWER_SUPPLY_EXT_PROP_DIRECT_VOLTAGE_MAX:
 			charger->step_vbatt_mv = val->intval;
-			pr_debug("%s, set voltage max : %d", __func__, charger->step_vbatt_mv);
+			pr_info("%s, set voltage max : %d", __func__, charger->step_vbatt_mv);
 			break;
 		case POWER_SUPPLY_EXT_PROP_DIRECT_CURRENT_MAX:
 			/*
@@ -917,11 +930,11 @@ static int s2mu107_dc_set_property(struct power_supply *psy,
 				charger->step_iin_ma = 1050;
 			else
 				charger->step_iin_ma = val->intval;
-			pr_debug("%s, set iin : %d", __func__, charger->step_iin_ma);
+			pr_info("%s, set iin : %d", __func__, charger->step_iin_ma);
 			s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_SET_CURRENT_MAX);
 			break;
 		case POWER_SUPPLY_EXT_PROP_DIRECT_PPS_READY:
-			pr_debug("%s, pps ready comes", __func__);
+			pr_info("%s, pps ready comes", __func__);
 			charger->is_pps_ready = true;
 			wake_up_interruptible(&charger->wait);
 			break;
@@ -929,7 +942,7 @@ static int s2mu107_dc_set_property(struct power_supply *psy,
 			//s2mu107_dc_state_manager(charger, DC_TRANS_DETACH);
 			break;
 		case POWER_SUPPLY_EXT_PROP_DIRECT_HARD_RESET:
-			pr_debug("%s, hard reset comes", __func__);
+			pr_info("%s, hard reset comes", __func__);
 			s2mu107_dc_enable(charger, S2MU107_DC_DISABLE);
 			charger->ps_health = POWER_SUPPLY_HEALTH_DC_ERR;
 			s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_FAIL_INT);
@@ -970,7 +983,7 @@ static void s2mu107_dc_cal_target_value(struct s2mu107_dc_data *charger)
 		charger->ppsVol = charger->pd_data->taMaxVol;
 	}
 
-	pr_debug("%s ppsVol : %d, vchgin_okb_retry : %d\n",
+	pr_info("%s ppsVol : %d, vchgin_okb_retry : %d\n",
 		__func__, charger->ppsVol, charger->vchgin_okb_retry);
 }
 
@@ -1012,7 +1025,7 @@ static int s2mu107_dc_get_pmeter(struct s2mu107_dc_data *charger, s2mu107_pmeter
 				__func__, ret);
 	} else {
 		charger->pmeter[id] = value.intval;
-		pr_debug("%s pm[%s] : %d\n", __func__, pmeter_to_str(id), value.intval);
+		pr_info("%s pm[%s] : %d\n", __func__, pmeter_to_str(id), value.intval);
 		return value.intval;
 	}
 	return -1;
@@ -1035,7 +1048,6 @@ static void s2mu107_dc_set_fg_iavg(struct s2mu107_dc_data *charger, int onoff)
 	if (ret < 0)
 		pr_err("%s: Fail to execute property\n", __func__);
 }
-
 static void s2mu107_dc_set_sc_prop(struct s2mu107_dc_data *charger, enum power_supply_property psp, int val)
 {
 	union power_supply_propval value;
@@ -1043,31 +1055,63 @@ static void s2mu107_dc_set_sc_prop(struct s2mu107_dc_data *charger, enum power_s
 	if (!charger->psy_sc)
 		return;
 	value.intval = val;
-	pr_debug("%s psp : %d\n", __func__, (int)psp);
+	pr_info("%s psp : %d\n", __func__, (int)psp);
 	ret = power_supply_set_property(charger->psy_sc, psp, &value);
 	if (ret < 0)
 		pr_err("%s: Fail to execute property\n", __func__);
 }
 
-static void s2mu107_dc_vchgin_compensation(struct s2mu107_dc_data *charger)
+#if 0
+static void s2mu107_dc_ir_drop_compensation(struct s2mu107_dc_data *charger)
 {
-	int vdiff;
-	int vchgin = s2mu107_dc_get_pmeter(charger, PMETER_ID_VCHGIN);
+	int vchgin;
+	int comp_pps_vol, comp_gap, diff;
 
-	pr_debug("%s enter, pps vol : %d, vchgin : %d\n", __func__, charger->ppsVol, vchgin);
-	if (vchgin > charger->ppsVol + 150) {
-		vdiff = ((vchgin - charger->ppsVol) / DC_TA_VOL_STEP_MV) * DC_TA_VOL_STEP_MV;
-		charger->ppsVol -= vdiff;
-		s2mu107_dc_send_verify(charger);
-	} else if (vchgin < charger->ppsVol - 150) {
-		vdiff = ((charger->ppsVol - vchgin) / DC_TA_VOL_STEP_MV) * DC_TA_VOL_STEP_MV;
-		charger->ppsVol += vdiff;
-		s2mu107_dc_send_verify(charger);
-	} else {
-		pr_debug("%s ok, pps vol : %d, vchgin : %d\n", __func__, charger->ppsVol, vchgin);
+	vchgin = s2mu107_dc_get_pmeter(charger, PMETER_ID_VCHGIN);
+	if (vchgin < 0) {
+		pr_info("%s Can't get Power meter information!\n", __func__);
+		return ;
 	}
-	s2mu107_dc_get_pmeter(charger, PMETER_ID_VCHGIN);
+	
+	/* In case of over vchgin */
+	if (vchgin > charger->ppsVol + 50) {
+		diff = (vchgin - charger->ppsVol);
+		charger->ppsVol =
+			((charger->ppsVol - diff) / DC_TA_VOL_STEP_MV) * DC_TA_VOL_STEP_MV;
+		sec_pd_select_pps(charger->pd_data->pdo_pos, charger->ppsVol, charger->adjustIIN);
+		s2mu107_dc_delay(charger, 200);
+		s2mu107_dc_get_pmeter(charger, PMETER_ID_VCHGIN);
+		return;
+	}
+
+	comp_pps_vol = charger->ppsVol;
+
+	while (charger->ppsVol - 50 > vchgin) {
+		s2mu107_dc_get_fg_value(charger, POWER_SUPPLY_PROP_CURRENT_NOW);
+		comp_gap = ((comp_pps_vol - vchgin) / DC_TA_VOL_STEP_MV) * DC_TA_VOL_STEP_MV + DC_TA_VOL_STEP_MV;
+		if (vchgin < 4100) {
+			s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_DETACH);
+			return;
+		}
+
+		if (!charger->is_charging)
+			return;
+
+		comp_pps_vol += comp_gap;
+		pr_info("%s comp_pps_vol : %d\n", __func__, comp_pps_vol);
+		sec_pd_select_pps(charger->pd_data->pdo_pos, comp_pps_vol, charger->adjustIIN);
+		s2mu107_dc_delay(charger, 300);
+		vchgin = s2mu107_dc_get_pmeter(charger, PMETER_ID_VCHGIN);
+
+		if (comp_pps_vol >= charger->pd_data->taMaxVol)
+			break;
+	}
+	pr_info("%s ppsVol : %d, vchgin : %d, pass\n", __func__, comp_pps_vol, vchgin);
+	charger->ppsVol = comp_pps_vol;
+
+	return;
 }
+#endif
 
 static int s2mu107_dc_check_vbat_validity(struct s2mu107_dc_data *charger)
 {
@@ -1085,8 +1129,8 @@ static void s2mu107_dc_set_target_curr(struct s2mu107_dc_data *charger)
 {
 	if (charger->step_iin_ma > charger->pd_data->taMaxCur)
 		charger->step_iin_ma = charger->pd_data->taMaxCur;
-
-	pr_debug("%s step_iin_ma : %d\n", __func__, charger->step_iin_ma);
+	
+	pr_info("%s step_iin_ma : %d\n", __func__, charger->step_iin_ma);
 	charger->targetIIN = ((charger->step_iin_ma / DC_TA_CURR_STEP_MA) * DC_TA_CURR_STEP_MA) + DC_TA_CURR_STEP_MA;
 	s2mu107_dc_set_charging_current(charger, (charger->targetIIN * 2), S2MU107_DC_MODE_TA_CC);
 	return;
@@ -1098,7 +1142,7 @@ static void s2mu107_dc_refresh_auto_pps(struct s2mu107_dc_data *charger, unsigne
 	charger->ppsVol = vol;
 	charger->targetIIN = iin;
 
-	pr_debug("%s vol : %d, iin : %d\n", __func__, vol, iin);
+	pr_info("%s vol : %d, iin : %d\n", __func__, vol, iin);
 	sec_pps_enable(charger->pd_data->pdo_pos,
 		charger->ppsVol, charger->targetIIN, S2MU107_DC_DISABLE);
 
@@ -1111,7 +1155,7 @@ static void s2mu107_dc_refresh_auto_pps(struct s2mu107_dc_data *charger, unsigne
 
 	if (s2mu107_dc_delay(charger, 500))
 		goto CANCEL_AUTO_PPS;
-
+	
 	charger->is_autopps_disabled = false;
 	sec_pps_enable(charger->pd_data->pdo_pos,
 		charger->ppsVol, charger->targetIIN, S2MU107_DC_ENABLE);
@@ -1119,17 +1163,60 @@ CANCEL_AUTO_PPS:
 	mutex_unlock(&charger->auto_pps_mutex);
 }
 
+#if 0
+static void s2mu107_dc_approach_target_curr_auto(struct s2mu107_dc_data *charger)
+{
+	int try_cnt = 0, iin, wait_ret;
+	mutex_lock(&charger->auto_pps_mutex);
+
+	pr_info("%s entered\n", __func__);
+	sec_pps_enable(charger->pd_data->pdo_pos,
+		charger->ppsVol, charger->targetIIN, S2MU107_DC_DISABLE);
+
+	if (s2mu107_dc_delay(charger, 500))
+		goto CANCEL_AUTO_PPS;
+
+	s2mu107_dc_send_fenced_pps(charger);
+	while (try_cnt++ < 20) {
+		msleep(100);
+		iin = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN) +
+			s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
+		pr_info("%s iin : %d\n", __func__, iin);
+
+		if (iin < charger->step_iin_ma) {
+			charger->ppsVol += DC_TA_VOL_STEP_MV;
+			wait_ret = s2mu107_dc_send_verify(charger);
+		} else if (iin > charger->step_iin_ma) {
+			charger->ppsVol += DC_TA_VOL_STEP_MV;
+			wait_ret = s2mu107_dc_send_verify(charger);
+			break;
+		}
+
+		if (!charger->is_charging)
+			goto CANCEL_AUTO_PPS;
+	}
+
+	if (s2mu107_dc_delay(charger, 500))
+		goto CANCEL_AUTO_PPS;
+
+	charger->is_autopps_disabled = false;
+	sec_pps_enable(charger->pd_data->pdo_pos,
+		charger->ppsVol, charger->targetIIN, S2MU107_DC_ENABLE);
+CANCEL_AUTO_PPS:
+	mutex_unlock(&charger->auto_pps_mutex);
+}
+#endif
+
 static void s2mu107_dc_approach_target_curr_manual(struct s2mu107_dc_data *charger)
 {
 	int wait_ret, try_cnt = 0, iin;
-
+	
 	if (charger->step_iin_ma <= 1050)
 		return;
-
+	
 	charger->is_rampup_adjusted = true;
-	charger->ppsVol = charger->pd_data->taMaxVol;
+	charger->ppsVol += DC_TA_VOL_STEP_MV * 4;
 	wait_ret = s2mu107_dc_send_verify(charger);
-	msleep(50);
 	iin = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN) +
 		s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
 
@@ -1138,7 +1225,7 @@ static void s2mu107_dc_approach_target_curr_manual(struct s2mu107_dc_data *charg
 			msleep(100);
 			iin = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN) +
 				s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
-			pr_debug("%s Reduce iin : %d\n", __func__, iin);		
+			pr_info("%s Reduce iin : %d\n", __func__, iin);		
 
 			if (iin > charger->step_iin_ma) {
 				charger->targetIIN -= DC_TA_CURR_STEP_MA;
@@ -1154,7 +1241,7 @@ static void s2mu107_dc_approach_target_curr_manual(struct s2mu107_dc_data *charg
 			msleep(100);
 			iin = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN) +
 				s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
-			pr_debug("%s Raise iin : %d\n", __func__, iin);		
+			pr_info("%s Raise iin : %d\n", __func__, iin);		
 
 			if (iin < charger->step_iin_ma) {
 				charger->targetIIN += DC_TA_CURR_STEP_MA;
@@ -1172,10 +1259,10 @@ static void s2mu107_dc_approach_target_curr_manual(struct s2mu107_dc_data *charg
 	if ((charger->ta_pwr_type == TA_PWR_TYPE_25W)
 		&& (charger->step_iin_ma >= charger->pd_data->taMaxCur)
 		&& (iin < charger->step_iin_ma - 50)) {
-		while(try_cnt++ < 40) {
+		while(try_cnt++ < 20) {
 			iin = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN) +
 				s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
-			pr_debug("%s Raise iin by Reduce Vol : %d\n", __func__, iin);
+			pr_info("%s Raise iin by Reduce Vol : %d\n", __func__, iin);
 
 			if (iin < charger->step_iin_ma - 50) {
 				charger->ppsVol -= DC_TA_VOL_STEP_MV;
@@ -1192,15 +1279,15 @@ static void s2mu107_dc_approach_target_curr_manual(struct s2mu107_dc_data *charg
 	}
 }
 
+
 static void s2mu107_dc_state_manager(struct s2mu107_dc_data *charger, s2mu107_dc_trans_t trans)
 {
 	s2mu107_dc_state_t next_state = DC_STATE_OFF;
 	mutex_lock(&charger->dc_state_mutex);
 	wake_lock(&charger->state_manager_wake);
-
-	pr_debug("%s: %s --> %s", __func__,
+	
+	pr_info("%s: %s --> %s", __func__,
 		state_to_str(charger->dc_state), trans_to_str(trans));
-
 	if (trans == DC_TRANS_DETACH || trans == DC_TRANS_FAIL_INT || trans == DC_TRANS_DC_OFF_INT) {
 		if (charger->dc_state != DC_STATE_OFF) {
 			next_state = DC_STATE_OFF;
@@ -1294,13 +1381,13 @@ static void s2mu107_dc_state_manager(struct s2mu107_dc_data *charger, s2mu107_dc
 	}
 
 HNDL_DC_OFF:
-	pr_debug("%s: %s --> %s --> %s", __func__,
+	pr_info("%s: %s --> %s --> %s", __func__,
 		state_to_str(charger->dc_state), trans_to_str(trans),
 		state_to_str(next_state));
-
+		
 	/* Trigger state function */
 	charger->dc_state = next_state;
-
+		
 	/* State update */
 	schedule_delayed_work(&charger->update_wqueue, 0);
 
@@ -1311,13 +1398,13 @@ HNDL_DC_OFF:
 	return;	
 
 SKIP_HNDL_DC_OFF:
-	pr_debug("%s: %s --> %s --> %s", __func__,
+	pr_info("%s: %s --> %s --> %s", __func__,
 		state_to_str(charger->dc_state), trans_to_str(trans),
 		state_to_str(next_state));
-
+		
 	/* Trigger state function */
 	charger->dc_state = next_state;
-
+	
 	/* State update */
 	schedule_delayed_work(&charger->update_wqueue, 0);
 
@@ -1326,7 +1413,6 @@ SKIP_HNDL_DC_OFF:
 	mutex_unlock(&charger->dc_state_mutex);
 
 	return;
-
 ERR:
 	pr_err("%s err occured, state now : %s\n", __func__,
 		state_to_str(charger->dc_state));
@@ -1351,39 +1437,38 @@ static void s2mu107_dc_state_check_vbat(void *data)
 	unsigned int vBatt, soc;
 
 	soc = s2mu107_dc_get_fg_value(charger, POWER_SUPPLY_PROP_CAPACITY);
-
 	if (charger->dc_sc_status == S2MU107_DC_SC_STATUS_CHARGE)
 		vBatt = s2mu107_dc_get_fg_value(charger, POWER_SUPPLY_PROP_VOLTAGE_AVG);
 	else
- 		vBatt = s2mu107_dc_get_pmeter(charger, PMETER_ID_VBATT);
+		vBatt = s2mu107_dc_get_pmeter(charger, PMETER_ID_VBATT);
 
 	msleep(100);
 	select_pdo(1);
 	msleep(100);
 
-	pr_debug("%s, soc : %d, vBatt : %d\n", __func__, soc, vBatt);
+	pr_info("%s, soc : %d, vBatt : %d\n", __func__, soc, vBatt);
 	s2mu107_dc_set_vsys_dcmode(charger, S2MU107_DC_DISABLE);
 
 	if (vBatt > (DC_MIN_VBAT + charger->chk_vbat_margin) && soc < DC_MAX_SOC) {
 		if (charger->dc_sc_status == S2MU107_DC_SC_STATUS_CHARGE) {
-			s2mu107_dc_set_sc_prop(charger,
-					POWER_SUPPLY_PROP_CHARGING_ENABLED,
-					SEC_BAT_CHG_MODE_CHARGING_OFF);
+ 			s2mu107_dc_set_sc_prop(charger,
+ 				POWER_SUPPLY_PROP_CHARGING_ENABLED,
+ 				SEC_BAT_CHG_MODE_CHARGING_OFF);
 			charger->dc_sc_status = S2MU107_DC_SC_STATUS_OFF;
-		}
-		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_BATTERY_OK);
-	} else {
-		s2mu107_dc_set_sc_prop(charger,
-				POWER_SUPPLY_PROP_CHARGING_ENABLED,
-				SEC_BAT_CHG_MODE_CHARGING);
-		msleep(100);
+ 		}
+ 		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_BATTERY_OK);
+ 	} else {
+		/* Buck Off */
 		s2mu107_dc_set_sc_prop(charger,
 			(enum power_supply_property)POWER_SUPPLY_EXT_PROP_DIRECT_BUCK_OFF,
 			S2MU107_DC_DISABLE);
-
+		msleep(100);
+		s2mu107_dc_set_sc_prop(charger,
+				POWER_SUPPLY_PROP_CHARGING_ENABLED,
+				SEC_BAT_CHG_MODE_CHARGING);
 		charger->dc_sc_status = S2MU107_DC_SC_STATUS_CHARGE;
-		schedule_delayed_work(&charger->check_vbat_wqueue, msecs_to_jiffies(1000));
-	}
+ 		schedule_delayed_work(&charger->check_vbat_wqueue, msecs_to_jiffies(1000));
+ 	}
 
 	return;
 }
@@ -1430,9 +1515,9 @@ static void s2mu107_dc_state_preset(void *data)
 	charger->pd_data->taMaxVol	= taMaxVol - 700;
 	charger->pd_data->taMaxCur	= taMaxCur;
 	charger->pd_data->taMaxPwr 	= taMaxPwr;
-
+	
 	if (pdo_pos == 0) {
-		pr_debug("%s invalid pdo_pos.\n", __func__);
+		pr_info("%s invalid pdo_pos.\n", __func__);
 		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_DETACH);
 		mutex_unlock(&charger->dc_mutex);
 		return;
@@ -1440,32 +1525,32 @@ static void s2mu107_dc_state_preset(void *data)
 
 	/* get step charging current */
 	charger->ta_pwr_type = (taMaxCur >= 4500) ? TA_PWR_TYPE_45W : TA_PWR_TYPE_25W;
-
+	
 	if (charger->step_iin_ma > taMaxCur)
 		charger->step_iin_ma = taMaxCur;
 
-	pr_debug("%s pdo_pos : %d, taMaxVol : %d, taMaxCur : %d, taMaxPwr : %d\n",
+	pr_info("%s pdo_pos : %d, taMaxVol : %d, taMaxCur : %d, taMaxPwr : %d\n",
 		__func__, pdo_pos, taMaxVol, taMaxCur, taMaxPwr);
+
+	/* Set Dual Buck */
+	s2mu107_dc_set_dual_buck(charger, S2MU107_DC_ENABLE);
+	msleep(50);
 
 	/* Buck Off */
 	s2mu107_dc_set_sc_prop(charger,
 		(enum power_supply_property)POWER_SUPPLY_EXT_PROP_DIRECT_BUCK_OFF,
 		S2MU107_DC_ENABLE);
-	msleep(50);
-
-	/* Set Dual Buck */
-	s2mu107_dc_set_dual_buck(charger, S2MU107_DC_ENABLE);
-	msleep(100);
+		msleep(100);
 
 	/* Determine the Initial Voltage Here */
 	s2mu107_dc_cal_target_value(charger);
 	charger->minIIN		= DC_TA_MIN_PPS_CURRENT;
 	charger->adjustIIN 	= ((charger->step_iin_ma / DC_TA_CURR_STEP_MA) * DC_TA_CURR_STEP_MA) + DC_TA_CURR_STEP_MA;
 	sec_pd_select_pps(charger->pd_data->pdo_pos, charger->ppsVol, charger->adjustIIN);
-
+	
 	s2mu107_dc_set_fg_iavg(charger, S2MU107_DC_ENABLE);
 	if (s2mu107_dc_delay(charger, 900)) {
-		pr_debug("%s DC stopped is_charging : %d, VCHGIN : %d\n", __func__,
+		pr_info("%s DC stopped is_charging : %d, VCHGIN : %d\n", __func__,
 			(int)charger->is_charging, charger->pmeter[PMETER_ID_VCHGIN]);
 		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_DETACH);
 		mutex_unlock(&charger->dc_mutex);
@@ -1474,17 +1559,17 @@ static void s2mu107_dc_state_preset(void *data)
 
 	/* Determine the Initial Voltage Here */
 	s2mu107_dc_cal_target_value(charger);
-
+	
 	s2mu107_dc_get_pmeter(charger, PMETER_ID_VCHGIN);
 	if (!charger->is_charging || (charger->pmeter[PMETER_ID_VCHGIN] < 4100)) {
-		pr_debug("%s DC stopped is_charging : %d, VCHGIN : %d\n", __func__,
+		pr_info("%s DC stopped is_charging : %d, VCHGIN : %d\n", __func__,
 			(int)charger->is_charging, charger->pmeter[PMETER_ID_VCHGIN]);
 		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_DETACH);
 		mutex_unlock(&charger->dc_mutex);
 		return;
 	}
 
-	pr_debug("%s: sec_pd_select_pps, pdo_pos : %d, ppsVol : %d, curr : %d\n",
+	pr_info("%s: sec_pd_select_pps, pdo_pos : %d, ppsVol : %d, curr : %d\n",
 		__func__, charger->pd_data->pdo_pos, charger->ppsVol, charger->adjustIIN);
 	sec_pd_select_pps(charger->pd_data->pdo_pos, charger->ppsVol, charger->adjustIIN);
 
@@ -1517,7 +1602,7 @@ static void s2mu107_dc_state_preset(void *data)
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_TEST2,
 				0x0 << DC_EN_OCP_FLAG_SHIFT,
 				DC_EN_OCP_FLAG_MASK);
-
+	
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_CD_OTP_02,
 				0x1 << CD_OCP_ACTION_SHIFT,
 				CD_OCP_ACTION_MASK);
@@ -1564,14 +1649,6 @@ static void s2mu107_dc_state_preset(void *data)
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_INPUT_OTP_04,
 				PLUG_OUT_ACTION_MASK, PLUG_OUT_ACTION_MASK);
 
-	/* DC_WCIN_RCP_INT_MASK */
-	s2mu107_update_reg(charger->i2c, S2MU107_DC_INT1_MASK,
-				DC_WCIN_RCP_INT_MASK_MASK, DC_WCIN_RCP_INT_MASK_MASK);
-
-	/* RCP_ACTION */
-	s2mu107_update_reg(charger->i2c, S2MU107_DC_CD_OTP_02,
-				RCP_ACTION_MASK, RCP_ACTION_MASK);
-
 	if (charger->rev_id == 1) {
 		/* enable EN_SCP_CHECK */
 		s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL17,
@@ -1610,7 +1687,7 @@ static void s2mu107_dc_state_preset(void *data)
 	/* Diff to 0 at 4.38V FV */
 	s2mu107_update_reg(charger->i2c,
 		S2MU107_DC_CD_OTP_01, 0, DIG_CV_MASK);
-
+ 
 	s2mu107_dc_set_iin_off(charger, SET_IIN_OFF_TARGET_MA);
 
 	msleep(100);
@@ -1622,9 +1699,9 @@ static void s2mu107_dc_state_preset(void *data)
 
 	//s2mu107_dc_ir_drop_compensation(charger);
 	if (!charger->is_charging || (charger->pmeter[PMETER_ID_VCHGIN] < 4100)) {
-		pr_debug("%s DC stopped is_charging : %d, VCHGIN : %d\n", __func__,
+		pr_info("%s DC stopped is_charging : %d, VCHGIN : %d\n", __func__,
 			(int)charger->is_charging, charger->pmeter[PMETER_ID_VCHGIN]);
-		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_DETACH);
+			s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_DETACH);
 		mutex_unlock(&charger->dc_mutex);
 		return;
 	}
@@ -1643,12 +1720,9 @@ static void s2mu107_dc_state_preset(void *data)
 	/* Request and Verify */
 	s2mu107_dc_send_verify(charger);
 
-	/* Check if the VCHGIN is ok */
-	s2mu107_dc_vchgin_compensation(charger);
-
 	/* dc en */
 	s2mu107_dc_enable(charger, S2MU107_DC_ENABLE);
-
+	
 	//schedule_delayed_work(&charger->chk_valid_wqueue,  msecs_to_jiffies(10000));
 	mutex_unlock(&charger->dc_mutex);
 
@@ -1667,7 +1741,7 @@ static void s2mu107_dc_state_start_cc(void *data)
 	iChgin = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN);
 
 	if (charger->adjustIIN >= charger->targetIIN) {
-		pr_debug("%s Rampup Finished, iChgin : %d\n", __func__, iChgin);
+		pr_info("%s Rampup Finished, iChgin : %d\n", __func__, iChgin);
 		cancel_delayed_work(&charger->start_cc_wqueue);
 		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_RAMPUP_FINISHED);
 	} else {
@@ -1698,27 +1772,18 @@ static void s2mu107_dc_state_start_cc(void *data)
 		iin = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN) +
 			s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
 
-		pr_debug("%s iin : %d\n", __func__, iin);
+		pr_info("%s iin : %d\n", __func__, iin);
 		if ((charger->ta_pwr_type == TA_PWR_TYPE_25W)
 			&& (charger->step_iin_ma == charger->pd_data->taMaxCur)) {
 			if (iin > charger->step_iin_ma) {
 				msleep(50);
 				iin = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN) +
 					s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
-				pr_debug("%s chk point iin : %d\n", __func__, iin);
+				pr_info("%s chk point iin : %d\n", __func__, iin);
 			}
 
 			if (iin > charger->step_iin_ma + 50) {
 				break;
-			}
-		}
-
-		if (charger->is_plugout_mask) {
-			if (iin > 300) {
-				charger->is_plugout_mask = false;
-				/* PLUG OUT OFF */
-				s2mu107_update_reg(charger->i2c, S2MU107_DC_INPUT_OTP_04,
-							0, PLUG_OUT_ACTION_MASK);
 			}
 		}
 	}
@@ -1737,15 +1802,14 @@ static void s2mu107_dc_state_cc(void *data)
 
 	cancel_delayed_work(&charger->timer_wqueue);
 	schedule_delayed_work(&charger->timer_wqueue, msecs_to_jiffies(2000));
-	pr_debug("%s Enter", __func__);
+	pr_info("%s Enter", __func__);
 
 	s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN);
 	s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
 
 	s2mu107_dc_set_irq_unmask(charger);
-
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL22,
- 		TA_TRANSIENT_DONE_MASK, TA_TRANSIENT_DONE_MASK);
+		TA_TRANSIENT_DONE_MASK, TA_TRANSIENT_DONE_MASK);
 
 	return;
 }
@@ -1754,7 +1818,7 @@ static void s2mu107_dc_state_sleep_cc(void *data)
 {
 	struct s2mu107_dc_data *charger = (struct s2mu107_dc_data *)data;
 
-	pr_debug("%s Enter", __func__);
+	pr_info("%s Enter", __func__);
 
 	cancel_delayed_work(&charger->timer_wqueue);
 	cancel_delayed_work(&charger->check_vbat_wqueue);
@@ -1792,7 +1856,7 @@ static void s2mu107_dc_state_adjusted_cc(void *data)
 	int iin, iin_cal, iin_set, vol_set;
 
 	s2mu107_dc_forced_enable(charger, S2MU107_DC_ENABLE);
-	pr_debug("%s Enter", __func__);
+	pr_info("%s Enter", __func__);
 
 	cancel_delayed_work(&charger->timer_wqueue);
 	cancel_delayed_work(&charger->check_vbat_wqueue);
@@ -1805,8 +1869,9 @@ static void s2mu107_dc_state_adjusted_cc(void *data)
 	iin_cal = (iin / DC_TA_CURR_STEP_MA) * DC_TA_CURR_STEP_MA;
 
 	iin_set = (iin_cal < charger->targetIIN) ? iin_cal + DC_TA_CURR_STEP_MA : charger->targetIIN;
+
 	vol_set = (charger->ta_pwr_type == TA_PWR_TYPE_45W) ? charger->ppsVol + 500 : charger->ppsVol;
-	
+
 	s2mu107_dc_set_topoff_current(charger, 500);
 	s2mu107_dc_refresh_auto_pps(charger, vol_set, iin_set);
 
@@ -1822,7 +1887,7 @@ static void s2mu107_dc_state_cv(void *data)
 	struct s2mu107_dc_data *charger = (struct s2mu107_dc_data *)data;
 
 	wake_lock(&charger->wake_lock);
-	pr_debug("%s Enter", __func__);
+	pr_info("%s Enter", __func__);
 
 	mutex_lock(&charger->auto_pps_mutex);
 	if (charger->pd_data->pdo_pos) {
@@ -1838,7 +1903,7 @@ static void s2mu107_dc_state_wakeup_cc(void *data)
 {
 	struct s2mu107_dc_data *charger = (struct s2mu107_dc_data *)data;
 
-	pr_debug("%s Enter", __func__);
+	pr_info("%s Enter", __func__);
 
 	wake_lock(&charger->wake_lock);
 
@@ -1904,7 +1969,7 @@ static void s2mu107_dc_state_done(void *data)
 static void s2mu107_dc_state_off(void *data)
 {
 	struct s2mu107_dc_data *charger = (struct s2mu107_dc_data *)data;
-	pr_debug("%s\n", __func__);
+	pr_info("%s\n", __func__);
 	wake_unlock(&charger->wake_lock);
 
 	charger->is_charging = false;
@@ -1954,7 +2019,7 @@ static int s2mu107_dc_send_fenced_pps(struct s2mu107_dc_data *charger)
 	if (charger->targetIIN < charger->minIIN)
 		charger->targetIIN = charger->minIIN;
 
-	pr_debug("%s vol : %d, curr : %d, duration : %ld\n",
+	pr_info("%s vol : %d, curr : %d, duration : %ld\n",
 		__func__, charger->ppsVol, charger->targetIIN,
 		s2mu107_dc_update_time_chk(charger));
 	if (charger->is_charging)
@@ -1978,7 +2043,7 @@ static int s2mu107_dc_send_verify(struct s2mu107_dc_data *charger)
 	wait_ret = wait_event_interruptible_timeout(charger->wait,
 			charger->is_pps_ready,
 			msecs_to_jiffies(500));
-	pr_debug("%s, wait %d ms.\n", __func__, wait_ret);
+	pr_info("%s, wait %d ms.\n", __func__, wait_ret);
 	return wait_ret;
 }
 
@@ -1988,9 +2053,9 @@ static void s2mu107_dc_timer_work(struct work_struct *work)
 						 timer_wqueue.work);
 	int ret;
 	u8 val;
-
+	
 	if ((!charger->is_charging) || (charger->dc_state != DC_STATE_CC)) {
-		pr_debug("%s, skip work\n", __func__);
+		pr_info("%s, skip work\n", __func__);
 		return;
 	}
 
@@ -2001,31 +2066,31 @@ static void s2mu107_dc_timer_work(struct work_struct *work)
 	s2mu107_dc_get_pmeter(charger, PMETER_ID_VBATT);
 	s2mu107_dc_get_pmeter(charger, PMETER_ID_TDIE);
 	s2mu107_read_reg(charger->i2c, S2MU107_DC_CTRL14, &val);
-	pr_debug("%s READ Charging current : 0x%X: %d mA\n", __func__, val & 0x7F, ((val & 0x7F) * 100));
+	pr_info("%s READ Charging current : 0x%X: %d mA\n", __func__, val & 0x7F, ((val & 0x7F) * 100));
 	s2mu107_read_reg(charger->i2c, S2MU107_DC_CD_OTP_02, &val);
-	pr_debug("%s D9. CC_IINB_CTRL : 0x%X\n", __func__, val & 0x8);
+	pr_info("%s D9. CC_IINB_CTRL : 0x%X\n", __func__, val & 0x8);
 	s2mu107_read_reg(charger->i2c, S2MU107_DC_TEST6, &val);
-	pr_debug("%s CV_EN(0x61) : 0x%X\n", __func__, val & 0x3);
+	pr_info("%s CV_EN(0x61) : 0x%X\n", __func__, val & 0x3);
 	//s2mu107_dc_cal_input_current(charger);
 	/* Set Dual Buck */
 	s2mu107_dc_set_dual_buck(charger, S2MU107_DC_ENABLE);
 
 	ret = s2mu107_dc_send_fenced_pps(charger);
-	pr_debug("%s send pps : %d\n", __func__, ret);
 
 	if (charger->ppsVol == charger->pd_data->taMaxVol) {
 		s2mu107_dc_forced_enable(charger, S2MU107_DC_ENABLE);
-		s2mu107_dc_set_input_current(charger, DC_MAX_INPUT_CURRENT_MA);
-		msleep(50);
-		s2mu107_dc_approach_target_curr_manual(charger);
-		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_CC_STABLED);
-		goto SKIP_ENQUEUE;
+		charger->cc_count++;
 	}
 
+	if (charger->cc_count > 2) {
+		s2mu107_dc_approach_target_curr_manual(charger);
+		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_CC_STABLED);
+		charger->cc_count = 0;
+	}
+
+	pr_info("%s send pps : %d, cc_count : %d\n", __func__, ret, charger->cc_count);
 	schedule_delayed_work(&charger->timer_wqueue, msecs_to_jiffies(5000));
 
-SKIP_ENQUEUE
-:
 	mutex_unlock(&charger->timer_mutex);
 }
 
@@ -2038,7 +2103,7 @@ static void s2mu107_dc_start_cc_work(struct work_struct *work)
 
 	ppsVol = charger->ppsVol;
 	charger->adjustIIN += DC_TA_CURR_STEP_MA;
-	pr_debug("%s, charger->adjustIIN : %d\n", __func__, charger->adjustIIN);
+	pr_info("%s, charger->adjustIIN : %d\n", __func__, charger->adjustIIN);
 	sec_pd_select_pps(charger->pd_data->pdo_pos, charger->ppsVol, charger->adjustIIN);
 	s2mu107_dc_state_manager(charger, DC_TRANS_RAMPUP);
 
@@ -2051,7 +2116,7 @@ static void s2mu107_dc_check_vbat_work(struct work_struct *work)
 						 check_vbat_wqueue.work);
 
 	mutex_lock(&charger->dc_mutex);
-	pr_debug("%s\n", __func__);
+	pr_info("%s\n", __func__);
 	s2mu107_dc_state_manager(charger, DC_TRANS_BATTERY_NG);
 	mutex_unlock(&charger->dc_mutex);
 }
@@ -2061,7 +2126,7 @@ static void s2mu107_dc_state_manager_work(struct work_struct *work)
 	struct s2mu107_dc_data *charger = container_of(work, struct s2mu107_dc_data,
 						 state_manager_wqueue.work);
 
-	pr_debug("%s\n", __func__);
+	pr_info("%s\n", __func__);
 	s2mu107_dc_state_manager(charger, charger->dc_trans);
 }
 
@@ -2072,7 +2137,7 @@ static void s2mu107_dc_set_prop_work(struct work_struct *work)
 	struct power_supply *psy;
 	int ret;
 
-	pr_debug("%s\n", __func__);
+	pr_info("%s\n", __func__);
 	psy = power_supply_get_by_name(charger->pdata->sec_dc_name);
 	if (!psy) {
 		pr_err("%s, can't get power supply", __func__);
@@ -2094,9 +2159,9 @@ static int s2mu107_dc_pps_isr(struct s2mu107_dc_data *charger, s2mu107_dc_pps_si
 
 	mutex_lock(&charger->pps_isr_mutex);
 
-	pr_debug("%s sig : %d, ppsVol : %d\n",
+	pr_info("%s sig : %d, ppsVol : %d\n",
 	__func__, sig, charger->ppsVol);
-
+	
 	if (charger->dc_state == DC_STATE_CC) {
 		if (sig == S2MU107_DC_PPS_SIGNAL_DEC) {
 			charger->ppsVol -= DC_TA_VOL_STEP_MV;
@@ -2107,28 +2172,41 @@ static int s2mu107_dc_pps_isr(struct s2mu107_dc_data *charger, s2mu107_dc_pps_si
 				s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_RAMPUP_OVER_VBATT);
 				goto SKIP_PPS_ISR_SEND_MSG;
 			}
-
+ 
 			vsys = s2mu107_dc_get_pmeter(charger, PMETER_ID_VSYS);
 			inow = s2mu107_dc_get_fg_value(charger, POWER_SUPPLY_PROP_CURRENT_NOW);
 			s2mu107_read_reg(charger->i2c, S2MU107_DC_CTRL14, &val);
 			target_cur = ((val & 0x7F) * 100);
-			pr_debug("%s READ Chging current : %d mA\n", __func__, target_cur);
+			pr_info("%s READ Chging current : %d mA\n", __func__, target_cur);
 
 			if (inow > target_cur) {
-				pr_debug("%s skipped increasing, inow : %d\n", __func__, inow);
+				pr_info("%s skipped increasing, inow : %d\n", __func__, inow);
 				goto SKIP_PPS_ISR_SEND_MSG;
 			}
 
+#if 0
 			iin = s2mu107_dc_get_pmeter(charger, PMETER_ID_ICHGIN) +
 				s2mu107_dc_get_pmeter(charger, PMETER_ID_IWCIN);
-			if (iin > charger->step_iin_ma + 50) {
-				s2mu107_dc_set_input_current(charger, charger->step_iin_ma + 100);
-				charger->ppsVol = charger->pd_data->taMaxVol;
+			if (charger->chk_iin_prev == 0)
+				charger->chk_iin_prev = iin;
+
+			if (iin < charger->chk_iin_prev - 100) {
+				s2mu107_dc_approach_target_curr_manual(charger);
+				s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_RAMPUP_OVER_CURRENT);
+				msleep(200);
+				goto SKIP_PPS_ISR_SEND_MSG;
+			} else if (iin < charger->chk_iin_prev) {
+				pr_info("%s less then prev : %d\n", __func__, charger->chk_iin_prev);
+				charger->ppsVol += DC_TA_VOL_STEP_MV * 2;
 			} else {
 				charger->ppsVol += DC_TA_VOL_STEP_MV * 2;
+				charger->chk_iin_prev = iin;
 			}
+#endif
 
-			pr_debug("%s UP!, vsys : %d, vbatt : %d\n", __func__, vsys, vbatt);
+			charger->ppsVol += DC_TA_VOL_STEP_MV * 2;
+
+			pr_info("%s UP!, vsys : %d, vbatt : %d\n", __func__, vsys, vbatt);
 		} else {
 			pr_err("%s err\n", __func__);
 			goto SKIP_PPS_ISR_DELAY;
@@ -2151,7 +2229,7 @@ static int s2mu107_dc_pps_isr(struct s2mu107_dc_data *charger, s2mu107_dc_pps_si
 			}
 		}
 	} else {
-		pr_debug("%s skipped by state check, curr state : %s", __func__,
+		pr_info("%s skipped by state check, curr state : %s", __func__,
 			state_to_str(charger->dc_state));
 		goto SKIP_PPS_ISR_TR_DONE;
 	}
@@ -2161,10 +2239,12 @@ SKIP_PPS_ISR_SEND_MSG:
 		usleep_range(10000, 11000);
 	else
 		msleep(charger->rise_speed_dly_ms);
+	
 SKIP_PPS_ISR_DELAY:
-	pr_debug("%s TA_TRANSIENT_DONE", __func__);
+	pr_info("%s TA_TRANSIENT_DONE", __func__);
 	s2mu107_update_reg(charger->i2c, S2MU107_DC_CTRL22,
 		TA_TRANSIENT_DONE_MASK, TA_TRANSIENT_DONE_MASK);
+		
 SKIP_PPS_ISR_TR_DONE:
 	mutex_unlock(&charger->pps_isr_mutex);
 	return 1;
@@ -2175,25 +2255,25 @@ static irqreturn_t s2mu107_dc_mode_isr(int irq, void *data)
 	struct s2mu107_dc_data *charger = data;
 
 	wake_lock(&charger->mode_irq);
-	pr_debug("%s", __func__);
+	pr_info("%s", __func__);
 
 	if (irq == charger->irq_normal_charging) {
 		/* status DC_START_CC */
-		pr_debug("%s Normal Charger detected\n", __func__);
+		pr_info("%s Normal Charger detected\n", __func__);
 		usleep_range(10000,11000);
 		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_NORMAL_CHG_INT);
 	} else if (irq == charger->irq_done){
-		pr_debug("%s Finish DC detected\n", __func__);
+		pr_info("%s Finish DC detected\n", __func__);
 		/* Done detect alarm */
 		/* status DC_DONE */
-		s2mu107_dc_state_manager(charger, DC_TRANS_DC_DONE_INT);
+		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_DC_DONE_INT);
 	} else if (irq == charger->irq_long_cc) {
-		pr_debug("%s lcc is activated\n", __func__);
+		pr_info("%s lcc is activated\n", __func__);
 	} else if (irq == charger->irq_off) {
-		s2mu107_dc_state_manager(charger, DC_TRANS_DC_OFF_INT);
+		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_DC_OFF_INT);
 	} else if (irq == charger->irq_plug_out) {
 		if (!charger->is_plugout_mask)
-			s2mu107_dc_state_manager(charger, DC_TRANS_DC_OFF_INT);
+			s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_DC_OFF_INT);
 	}
 	wake_unlock(&charger->mode_irq);
 
@@ -2203,14 +2283,15 @@ static irqreturn_t s2mu107_dc_mode_isr(int irq, void *data)
 static irqreturn_t s2mu107_dc_fail_isr(int irq, void *data)
 {
 	struct s2mu107_dc_data *charger = data;
-
+	
 	if (!charger->is_charging) {
-		pr_debug("%s, DC is not charging. skip isr\n", __func__);
+		pr_info("%s, DC is not charging. skip isr\n", __func__);
 		return IRQ_HANDLED;
 	}
 
 	wake_lock(&charger->fail_irq);
-	pr_debug("%s, duration : %ld",
+
+	pr_info("%s, duration : %ld",
 			__func__, s2mu107_dc_update_time_chk(charger));
 
 	s2mu107_dc_get_pmeter(charger, PMETER_ID_VCHGIN);
@@ -2226,6 +2307,8 @@ static irqreturn_t s2mu107_dc_fail_isr(int irq, void *data)
 		|| irq == charger->irq_byp2out_ovp
 		|| irq == charger->irq_byp_ovp
 		|| irq == charger->irq_out_ovp
+		|| irq == charger->irq_wcin_rcp
+		|| irq == charger->irq_chgin_rcp
 		|| irq == charger->irq_wcin_diod_prot
 		|| irq == charger->irq_chgin_diod_prot
 		|| irq == charger->irq_pps_fail
@@ -2233,13 +2316,13 @@ static irqreturn_t s2mu107_dc_fail_isr(int irq, void *data)
 		|| irq == charger->irq_sc_off
 		|| irq == charger->irq_pm_off
 		|| irq == charger->irq_tsd) {
-		pr_debug("%s : dc was stopped\n", __func__);
+		pr_info("%s : dc was stopped\n", __func__);
 		charger->ps_health = POWER_SUPPLY_HEALTH_DC_ERR;
 		charger->is_charging = false;
 		s2mu107_dc_state_manager(charger, DC_TRANS_FAIL_INT);
 		charger->vchgin_okb_retry = 0;
 	} else if (irq == charger->irq_vchgin_okb) {
-		pr_debug("%s : VBUS is not ready\n", __func__);
+		pr_info("%s : VBUS is not ready\n", __func__);
 		s2mu107_dc_get_pmeter(charger, PMETER_ID_VCHGIN);
 		charger->vchgin_okb_retry++;
 		msleep(100);
@@ -2250,30 +2333,19 @@ static irqreturn_t s2mu107_dc_fail_isr(int irq, void *data)
 			s2mu107_dc_state_manager(charger, DC_TRANS_CHGIN_OKB_INT);
 		}
 	} else if (irq == charger->irq_vbat_okb) {
-		pr_debug("%s : VBAT is not ready\n", __func__);
+		pr_info("%s : VBAT is not ready\n", __func__);
 		if (charger->dc_state != DC_STATE_PRESET) {
 			charger->ps_health = POWER_SUPPLY_HEALTH_DC_ERR;
-			pr_debug("%s : vbat to fail.\n", __func__);
+			pr_info("%s : vbat to fail.\n", __func__);
 			s2mu107_dc_state_manager(charger, DC_TRANS_FAIL_INT);
 		} else {
-			pr_debug("%s : vbat to okb.\n", __func__);
+			pr_info("%s : vbat to okb.\n", __func__);
 			s2mu107_dc_state_manager(charger, DC_TRANS_BAT_OKB_INT);
 		}
-	} else if (irq == charger->irq_chgin_rcp) {
-		if (charger->pmeter[PMETER_ID_ICHGIN] <= 125
-			|| charger->pmeter[PMETER_ID_IWCIN] <= 125) {
-			pr_debug("%s : RCP occurs\n", __func__);
-			charger->ps_health = POWER_SUPPLY_HEALTH_DC_ERR;
-			charger->is_charging = false;
-			s2mu107_dc_state_manager(charger, DC_TRANS_FAIL_INT);
-			charger->vchgin_okb_retry = 0;
-		} else {
-			pr_debug("%s : seems to be a false rcp alarm.\n", __func__);
-		}
 	} else {
-		pr_debug("%s :Not handled IRQ\n", __func__);
+		pr_info("%s :Not handled IRQ\n", __func__);
 	}
-
+	
 	wake_unlock(&charger->fail_irq);
 	return IRQ_HANDLED;
 }
@@ -2290,7 +2362,7 @@ static irqreturn_t s2mu107_dc_thermal_isr(int irq, void *data)
 	s2mu107_read_reg(charger->i2c, S2MU107_DC_INT2, &int2);
 	s2mu107_read_reg(charger->i2c, S2MU107_DC_INT3, &int3);
 
-	pr_debug("%s Thermal Status! (0x%2x, 0x%2x, 0x%2x, 0x%2x) :",
+	pr_info("%s Thermal Status! (0x%2x, 0x%2x, 0x%2x, 0x%2x) :",
 			__func__, int0, int1, int2, int3);
 
 	wake_unlock(&charger->thermal_irq);
@@ -2353,6 +2425,12 @@ static int s2mu107_dc_irq_init(struct s2mu107_dc_data *charger)
 		goto err_irq;
 
 	/* DC_INT_1 */
+	charger->irq_wcin_rcp = irq_base + S2MU107_DC_IRQ1_DC_WCIN_RCP;
+	ret = request_threaded_irq(charger->irq_wcin_rcp, NULL,
+			s2mu107_dc_fail_isr, 0, "dc-wcin-rcp", charger);
+	if (ret < 0)
+		goto err_irq;
+
 	charger->irq_chgin_rcp = irq_base + S2MU107_DC_IRQ1_DC_CHGIN_RCP;
 	ret = request_threaded_irq(charger->irq_chgin_rcp, NULL,
 			s2mu107_dc_fail_isr, 0, "dc-chgin-rcp", charger);
@@ -2453,6 +2531,7 @@ static int s2mu107_dc_set_wcin_pwrtr(struct s2mu107_dc_data *charger)
 
 static bool s2mu107_dc_init(struct s2mu107_dc_data *charger)
 {
+
 	int topoff_current = s2mu107_dc_get_topoff_current(charger);
 	int float_voltage = s2mu107_dc_get_float_voltage(charger);
 	int input_current = s2mu107_dc_get_input_current(charger);
@@ -2466,7 +2545,7 @@ static bool s2mu107_dc_init(struct s2mu107_dc_data *charger)
 	s2mu107_dc_pm_enable(charger);
 	s2mu107_dc_enable(charger, 0);
 	s2mu107_dc_set_fg_iavg(charger, S2MU107_DC_DISABLE);
-
+	
 	if (charger->rev_id == 0x00)
 		s2mu107_dc_set_wcin_pwrtr(charger);
 
@@ -2482,6 +2561,7 @@ static bool s2mu107_dc_init(struct s2mu107_dc_data *charger)
 	charger->dc_state_fp[DC_STATE_WAKEUP_CC]	= s2mu107_dc_state_wakeup_cc;
 	charger->dc_state_fp[DC_STATE_DONE] 		= s2mu107_dc_state_done;
 	charger->vchgin_okb_retry = 0;
+	charger->cc_count = 0;
 
 	charger->is_pps_ready = false;
 	charger->rise_speed_dly_ms = 10;
@@ -2516,7 +2596,7 @@ static void s2mu107_dc_step_cv(struct s2mu107_dc_data *charger)
 
 	iavg = s2mu107_dc_get_fg_value(charger, POWER_SUPPLY_PROP_CURRENT_AVG);
 	vavg = s2mu107_dc_get_fg_value(charger, POWER_SUPPLY_PROP_VOLTAGE_AVG);
-	pr_debug("%s, iavg : %d, vavg : %d, step_vbatt_mv : %d, step_cv_cnt : %d\n",
+	pr_info("%s, iavg : %d, vavg : %d, step_vbatt_mv : %d, step_cv_cnt : %d\n",
 		__func__, iavg, vavg, charger->step_vbatt_mv, charger->step_cv_cnt++);
 
 	if (charger->targetIIN <= DC_TOPOFF_CURRENT_MA) {
@@ -2535,7 +2615,7 @@ static void s2mu107_dc_step_cv(struct s2mu107_dc_data *charger)
 		value.intval = SEC_DIRECT_CHG_MODE_DIRECT_DONE;
 		ret = power_supply_set_property(psy,
 			(enum power_supply_property)POWER_SUPPLY_EXT_PROP_DIRECT_CHARGER_MODE, &value);
-
+			
 		/* Chk for Done */
 		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_TOP_OFF_CURRENT);
 		return;
@@ -2546,7 +2626,7 @@ static void s2mu107_dc_step_cv(struct s2mu107_dc_data *charger)
 		charger->targetIIN -= DC_TA_CURR_STEP_MA;
 	}
 	s2mu107_dc_send_fenced_pps(charger);
-
+	
 	if (vavg >= 4300)
 		charger->alarm_interval = HV_ALARM_INTERVAL;
 }
@@ -2556,11 +2636,33 @@ static void s2mu107_dc_step_cc(struct s2mu107_dc_data *charger)
 	int vavg = 0;
 
 	vavg = s2mu107_dc_get_fg_value(charger, POWER_SUPPLY_PROP_VOLTAGE_AVG);
-	pr_debug("%s, vavg : %d, float voltage : %d\n", __func__, vavg, charger->step_vbatt_mv);
+	pr_info("%s, vavg : %d, float voltage : %d\n", __func__, vavg, charger->step_vbatt_mv);
 
 	if (vavg >= charger->step_vbatt_mv) {
 		s2mu107_dc_state_trans_enqueue(charger, DC_TRANS_FLOAT_VBATT);
 	}
+
+	if (charger->ppsVol < charger->pd_data->taMaxVol) {
+		vavg = s2mu107_dc_get_fg_value(charger, POWER_SUPPLY_PROP_VOLTAGE_AVG);
+		if (charger->chk_vbat_prev == 0)
+			charger->chk_vbat_prev = vavg;
+
+		charger->chk_vbat_charged = vavg - charger->chk_vbat_prev;
+		if (charger->chk_vbat_charged > 500) {
+			pr_info("%s, strange, charged : %d, prev : %d\n",
+				__func__, charger->chk_vbat_charged, charger->chk_vbat_prev);
+		} else if (charger->chk_vbat_charged >= DC_TA_VOL_STEP_MV) {
+			pr_info("%s, charged : %d, prev : %d\n",
+				__func__, charger->chk_vbat_charged, charger->chk_vbat_prev);
+			charger->ppsVol += (charger->chk_vbat_charged / DC_TA_VOL_STEP_MV) * DC_TA_VOL_STEP_MV;
+			charger->chk_vbat_charged = 0;
+			charger->chk_vbat_prev = vavg;
+			s2mu107_dc_refresh_auto_pps(charger,
+				charger->ppsVol, charger->targetIIN);
+			charger->alarm_interval = DEFAULT_ALARM_INTERVAL;
+		}
+	}
+
 }
 
 static void s2mu107_dc_monitor_work(struct work_struct *work)
@@ -2568,15 +2670,8 @@ static void s2mu107_dc_monitor_work(struct work_struct *work)
 	struct s2mu107_dc_data *charger =
 		container_of(work, struct s2mu107_dc_data, dc_monitor_work.work);
 
-	if (!charger->is_charging) {
-		pr_debug("%s, skip work\n", __func__);
-		wake_unlock(&charger->dc_mon_wake_lock);
-		alarm_cancel(&charger->dc_monitor_alarm);
-		return;
-	}
-
 	mutex_lock(&charger->dc_mon_mutex);
-	pr_debug("%s: %s, duration : %ld s", __func__,
+	pr_info("%s: %s, duration : %ld s", __func__,
 		state_to_str(charger->dc_state), s2mu107_dc_update_time_chk(charger));
 
 	switch (charger->dc_state) {
@@ -2588,9 +2683,7 @@ static void s2mu107_dc_monitor_work(struct work_struct *work)
 		s2mu107_dc_step_cv(charger);
 		break;
 	default:
-		pr_debug("%s, stop work, state : %s\n", __func__, state_to_str(charger->dc_state));
-		alarm_cancel(&charger->dc_monitor_alarm);
-		goto SKIP_WORK;
+		break;
 	}
 	s2mu107_dc_test_read(charger->i2c);
 
@@ -2598,7 +2691,7 @@ static void s2mu107_dc_monitor_work(struct work_struct *work)
 	alarm_start_relative(&charger->dc_monitor_alarm, ktime_set(charger->alarm_interval, 0));
 
 	msleep(50);
-SKIP_WORK:
+
 	wake_unlock(&charger->dc_mon_wake_lock);
 	mutex_unlock(&charger->dc_mon_mutex);
 }
@@ -2649,141 +2742,35 @@ static int s2mu107_dc_parse_dt(struct device *dev,
 	ret = of_property_read_string(np, "dc,direct_charger_name",
 				(char const **)&pdata->dc_name);
 	if (ret < 0)
-		pr_debug("%s: Direct Charger name is Empty\n", __func__);
+		pr_info("%s: Direct Charger name is Empty\n", __func__);
 
 	ret = of_property_read_u32(np, "dc,input_current_limit",
 			&pdata->input_current_limit);
 	if (ret) {
-		pr_debug("%s: dc,input_current_limit Empty default 4000\n", __func__);
+		pr_info("%s: dc,input_current_limit Empty default 4000\n", __func__);
 		pdata->input_current_limit = DC_MAX_INPUT_CURRENT_MA;
 	}
 
 	ret = of_property_read_u32(np, "dc,topoff_current",
 			&pdata->topoff_current);
 	if (ret) {
-		pr_debug("%s: dc,topoff_current Empty default 2000\n", __func__);
+		pr_info("%s: dc,topoff_current Empty default 2000\n", __func__);
 		pdata->topoff_current = DC_TOPOFF_CURRENT_MA;
 	}
 
 	ret = of_property_read_u32(np, "dc,temperature_source",
 			&pdata->temperature_source);
 	if (ret) {
-		pr_debug("%s: dc,temperature_source empty, default NTC\n", __func__);
+		pr_info("%s: dc,temperature_source empty, default NTC\n", __func__);
 		pdata->temperature_source = 1;
 	}
 
-	pr_debug("%s DT file parsed succesfully\n", __func__);
+	pr_info("%s DT file parsed succesfully\n", __func__);
 	return 0;
 
 err:
-	pr_debug("%s, direct charger parsing failed\n", __func__);
+	pr_info("%s, direct charger parsing failed\n", __func__);
 	return -1;
-}
-
-ssize_t s2mu107_dc_show_attrs(struct device *dev,
-				struct device_attribute *attr, char *buf);
-
-ssize_t s2mu107_dc_store_attrs(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t count);
-#define S2MU107_DC_ATTR(_name)				\
-{							\
-	.attr = {.name = #_name, .mode = 0664},	\
-	.show = s2mu107_dc_show_attrs,			\
-	.store = s2mu107_dc_store_attrs,			\
-}
-enum {
-	CHIP_ID = 0,
-	DATA
-};
-static struct device_attribute s2mu107_dc_attrs[] = {
-	S2MU107_DC_ATTR(chip_id),
-	S2MU107_DC_ATTR(data),
-};
-static int s2mu107_dc_create_attrs(struct device *dev)
-{
-	int i, rc;
-
-	for (i = 0; i < (int)ARRAY_SIZE(s2mu107_dc_attrs); i++) {
-		rc = device_create_file(dev, &s2mu107_dc_attrs[i]);
-		if (rc)
-			goto create_attrs_failed;
-	}
-	return rc;
-
-create_attrs_failed:
-	dev_err(dev, "%s: failed (%d)\n", __func__, rc);
-	while (i--)
-		device_remove_file(dev, &s2mu107_dc_attrs[i]);
-	return rc;
-}
-
-ssize_t s2mu107_dc_show_attrs(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	struct power_supply *psy = dev_get_drvdata(dev);
-	struct s2mu107_dc_data *charger = power_supply_get_drvdata(psy);
-	const ptrdiff_t offset = attr - s2mu107_dc_attrs;
-	int i = 0;
-	u8 addr, data;
-
-	switch (offset) {
-	case CHIP_ID:
-		i += scnprintf(buf + i, PAGE_SIZE - i, "%x\n", charger->rev_id);
-		break;
-	case DATA:
-		for (addr = 0x0B; addr <= 0x0E; addr++) {
-			s2mu107_read_reg(charger->i2c, addr, &data);
-			i += scnprintf(buf + i, PAGE_SIZE - i,
-				       "0x%02x : 0x%02x\n", addr, data);
-		}
-		for (addr = 0x41; addr <= 0x5A; addr++) {
-			s2mu107_read_reg(charger->i2c, addr, &data);
-			i += scnprintf(buf + i, PAGE_SIZE - i,
-				       "0x%02x : 0x%02x\n", addr, data);
-		}
-		break;
-	default:
-		return -EINVAL;
-	}
-	return i;
-}
-
-ssize_t s2mu107_dc_store_attrs(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t count)
-{
-	struct power_supply *psy = dev_get_drvdata(dev);
-	struct s2mu107_dc_data *charger = power_supply_get_drvdata(psy);
-	const ptrdiff_t offset = attr - s2mu107_dc_attrs;
-	int ret = 0;
-	int x, y;
-
-	switch (offset) {
-	case CHIP_ID:
-		ret = count;
-		break;
-	case DATA:
-		if (sscanf(buf, "0x%8x 0x%8x", &x, &y) == 2) {
-			if (x >= 0x00 && x <= 0x2F) {
-				u8 addr = x;
-				u8 data = y;
-
-				if (s2mu107_write_reg(charger->i2c, addr, data) < 0) {
-					dev_info(charger->dev,
-						"%s: addr: 0x%x write fail\n", __func__, addr);
-				}
-			} else {
-				dev_info(charger->dev,
-					"%s: addr: 0x%x is wrong\n", __func__, x);
-			}
-		}
-		ret = count;
-		break;
-	default:
-		ret = -EINVAL;
-	}
-	return ret;
 }
 
 /* if need to set s2mu107 pdata */
@@ -2801,7 +2788,7 @@ static int s2mu107_direct_charger_probe(struct platform_device *pdev)
 	int ret = 0;
 	s2mu107_dc_pd_data_t *pd_data;
 
-	pr_debug("%s: S2MU107 Direct Charger driver probe\n", __func__);
+	pr_info("%s: S2MU107 Direct Charger driver probe\n", __func__);
 	charger = kzalloc(sizeof(*charger), GFP_KERNEL);
 	if (!charger)
 		return -ENOMEM;
@@ -2910,7 +2897,7 @@ static int s2mu107_direct_charger_probe(struct platform_device *pdev)
 		s2mu107_dc_chk_valid_work);
 	INIT_DELAYED_WORK(&charger->update_wqueue,
 		s2mu107_dc_update_work);
-
+		
 	alarm_init(&charger->dc_monitor_alarm, ALARM_BOOTTIME, dc_monitor_alarm);
 	charger->alarm_interval = DEFAULT_ALARM_INTERVAL;
 
@@ -2919,7 +2906,7 @@ static int s2mu107_direct_charger_probe(struct platform_device *pdev)
 #if defined(BRINGUP)
 	charger->timer_wqueue = create_singlethread_workqueue("dc-wq");
 	if (!charger->timer_wqueue) {
-		pr_debug("%s: failed to create wq.\n", __func__);
+		pr_info("%s: failed to create wq.\n", __func__);
 		ret = -ESRCH;
 		goto err_create_wq;
 	}
@@ -2930,12 +2917,7 @@ static int s2mu107_direct_charger_probe(struct platform_device *pdev)
 #if EN_TEST_READ
 	s2mu107_dc_test_read(charger->i2c);
 #endif
-	ret = s2mu107_dc_create_attrs(&charger->psy_dc->dev);
-	if (ret) {
-		dev_err(charger->dev,
-			"%s : Failed to create_attrs\n", __func__);
-	}
-	pr_debug("%s: S2MU107 Direct Charger driver loaded OK\n", __func__);
+	pr_info("%s: S2MU107 Direct Charger driver loaded OK\n", __func__);
 
 	return 0;
 
@@ -3018,7 +3000,7 @@ static void s2mu107_direct_charger_complete(struct device *dev)
 
 static void s2mu107_direct_charger_shutdown(struct device *dev)
 {
-	pr_debug("%s: S2MU107 Direct Charger driver shutdown\n", __func__);
+	pr_info("%s: S2MU107 Direct Charger driver shutdown\n", __func__);
 }
 
 static const struct dev_pm_ops s2mu107_direct_charger_pm_ops = {
@@ -3043,7 +3025,7 @@ static struct platform_driver s2mu107_direct_charger_driver = {
 static int __init s2mu107_direct_charger_init(void)
 {
 	int ret = 0;
-	pr_debug("%s start\n", __func__);
+	pr_info("%s start\n", __func__);
 	ret = platform_driver_register(&s2mu107_direct_charger_driver);
 
 	return ret;

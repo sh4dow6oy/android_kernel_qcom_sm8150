@@ -379,9 +379,7 @@ static int adc_gain[16] = { 0, 1, 2, 3, 4, 5, 6, 7, -8, -7, -6, -5, -4, -3, -2, 
 
 #if defined(CONFIG_BATTERY_SAMSUNG)
 #define PCA9468_SEC_DENOM_U_M		1000 // 1000, denominator
-#if defined(CONFIG_ENG_BATTERY_CONCEPT)
 #define PCA9468_BATT_WDT_CONTROL_T		30000	// 30s
-#endif
 #endif
 
 /* INT1 Register Buffer */
@@ -609,9 +607,7 @@ struct pca9468_charger {
 	unsigned int pdo_max_voltage;
 	unsigned int pdo_max_current;
 
-#if defined(CONFIG_ENG_BATTERY_CONCEPT)
 	struct delayed_work wdt_control_work;
-#endif
 #endif
 };
 

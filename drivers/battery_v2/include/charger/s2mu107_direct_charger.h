@@ -100,10 +100,6 @@
 #define S2MU107_DC_CD_OTP_02		0xD9
 #define S2MU107_DC_INPUT_OTP_04		0xDF
 
-/* S2MU107_DC_INT1_MASK */
-#define DC_WCIN_RCP_INT_MASK_SHIFT	5
-#define DC_WCIN_RCP_INT_MASK_MASK	BIT(DC_WCIN_RCP_INT_MASK_SHIFT)
-
 /* S2MU107_SC_STATUS1_DC */
 #define SC_FAULT_STATUS_SHIFT		4
 #define SC_FAULT_STATUS_WIDTH		4
@@ -146,6 +142,7 @@
 #define T_GD_ASYNC_WIDTH		2
 #define T_GD_ASYNC_MASK			MASK(T_GD_ASYNC_WIDTH, T_GD_ASYNC_SHIFT)
 #define SET_ASYNC_MODE			0x3
+
 /* S2MU107_SC_CTRL17_DC */
 #define T_EN_VSYS_DISCHARGE_SHIFT	6
 #define T_EN_VSYS_DISCHARGE_WIDTH	2
@@ -320,9 +317,7 @@
 #define WDT_CLR_MASK BIT(WDT_CLR_SHIFT)
 
 /* S2MU107_DC_CD_OTP_02 */
-#define RCP_ACTION_SHIFT	4
 #define CD_OCP_ACTION_SHIFT	1
-#define RCP_ACTION_MASK		BIT(RCP_ACTION_SHIFT)
 #define CD_OCP_ACTION_MASK	BIT(CD_OCP_ACTION_SHIFT)
 
 /* S2MU107_DC_INPUT_OTP_04 */
@@ -553,7 +548,7 @@ struct s2mu107_dc_data {
 	/* DC_INT_0 */
 	int irq_ramp_fail;
 	int irq_normal_charging;
-	int irq_wcin_okb;
+	int irq_wcin_okb;	
 	int irq_vchgin_okb;
 
 	int irq_byp2out_ovp;
@@ -586,7 +581,7 @@ struct s2mu107_dc_data {
 	int irq_sc_off;
 	int irq_pm_off;
 	int irq_wcin_up;
-	int irq_wcin_down;	
+	int irq_wcin_down;
 	int irq_tsd;
 
 	/* [1] rsvd */
@@ -599,4 +594,5 @@ extern int sec_pd_get_apdo_max_power(unsigned int *pdo_pos, unsigned int *taMaxV
 extern int sec_pd_select_pps(int num, int ppsVol, int ppsCur);
 extern int sec_pps_enable(int num, int ppsVol, int ppsCur, int enable);
 extern int sec_get_pps_voltage(void);
+
 #endif /*S2MU107_CHARGER_H*/
