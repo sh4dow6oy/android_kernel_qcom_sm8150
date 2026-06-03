@@ -79,13 +79,14 @@ static inline long gup_local(struct mm_struct *mm, uintptr_t start,
 
 	if (write)
 		flags |= FOLL_WRITE;
-        //temporaily blocked. should be changed after integrating FOLL_CMA 
-        //flags |= (write) ? FOLL_WRITE|FOLL_CMA : FOLL_CMA; 
 
+	/* Dacă FOLL_CMA este definit în kernel, îl adăugăm, altfel compilatorul îl ignoră */
+#if defined(FOLL_CMA)
 	flags |= FOLL_CMA;
+#endif
 
-	return get_user_pages_remote(NULL, mm, start, nr_pages, flags, pages,
-				     NULL, NULL);
+	/* Pentru kernel-uri noi (Android 11/12/13/14+, Linux 5.x/6.x), get_user_pages_remote are 7 argumente */
+	return get_user_pages_remote(mm, start, nr_pages, flags, pages, NULL, NULL);
 }
 
 /*
