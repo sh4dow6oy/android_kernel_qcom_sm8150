@@ -25,6 +25,10 @@
 
 #include "ss_dsi_panel_common.h"
 
+/* Prototipuri de fallback pentru subsistemul de debug SDE */
+extern size_t ss_sde_evtlog_dump_read(struct file *file, char __user *buff, size_t count, loff_t *ppos);
+extern void ss_sde_dbg_debugfs_open(void);
+
 bool enable_pr_debug;
 DEFINE_SPINLOCK(ss_xlock);
 
@@ -280,7 +284,7 @@ static ssize_t debug_display_read(struct file *file, char __user *buff,
 	struct miscdevice *c = file->private_data;
 	struct dsi_display *display = dev_get_drvdata(c->parent);
 	struct dsi_panel *panel = display->panel;
-	struct samsung_display_driver_data *vdd = panel->panel_private;
+	struct samsung_display_driver_data *vdd = check_valid_ctrl(panel);
 	ssize_t len;
 
 	if (IS_ERR_OR_NULL(vdd)) {
@@ -312,7 +316,7 @@ static int debug_display_open(struct inode *inode, struct file *file)
 	struct miscdevice *c = file->private_data;
 	struct dsi_display *display = dev_get_drvdata(c->parent);
 	struct dsi_panel *panel = display->panel;
-	struct samsung_display_driver_data *vdd = panel->panel_private;
+	struct samsung_display_driver_data *vdd = check_valid_ctrl(panel);
 
 	if (IS_ERR_OR_NULL(vdd)) {
 		LCD_ERR("vdd is null or error\n");
