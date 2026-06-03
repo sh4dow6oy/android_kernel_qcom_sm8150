@@ -3823,7 +3823,7 @@ static ssize_t ss_isc_store(struct device *dev,
 		val = 0xFF;
 	}
 
-	isc_cmds->cmds[2].msg.tx_buf[1] = val;
+	((u8 *)isc_cmds->cmds[2].msg.tx_buf)[1] = val;
 
 	ss_send_cmd(vdd, TX_ISC_DATA_THRESHOLD);
 
