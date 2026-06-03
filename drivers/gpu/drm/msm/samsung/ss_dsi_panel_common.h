@@ -331,11 +331,20 @@ struct esd_recovery {
 	void (*esd_irq_enable)(bool enable, bool nosync, void *data); int send_esd_recovery;
 };
 
-enum { LPM_VER0 = 0, LPM_VER1 };
-enum { LPM_MODE_OFF = 0, ALPM_MODE_ON, HLPM_MODE_ON, MAX_LPM_MODE };
-enum { ALPM_MODE_ON_2NIT = 1, HLPM_MODE_ON_2NIT, ALPM_MODE_ON_60NIT, HLPM_MODE_ON_60NIT_DUMMY };
-enum { LPM_2NIT_IDX = 0, LPM_10NIT_IDX, LPM_30NIT_IDX, LPM_40NIT_IDX, LPM_60NIT_IDX, LPM_BRIGHTNESS_MAX_IDX };
-enum { LPM_2NIT = 2, LPM_10NIT = 10, LPM_30NIT = 30, LPM_40NIT = 40, LPM_60NIT = 60, LPM_BRIGHTNESS_MAX };
+enum { 
+	LPM_MODE_OFF = 0, 
+	ALPM_MODE_ON, 
+	HLPM_MODE_ON, 
+	MAX_LPM_MODE 
+};
+
+enum { 
+	ALPM_MODE_ON_2NIT = 1, 
+	HLPM_MODE_ON_2NIT = 2, 
+	ALPM_MODE_ON_60NIT = 3, 
+	HLPM_MODE_ON_60NIT_DUMMY = 4,
+	HLPM_MODE_ON_60NIT = 5 /* Definit explicit ca identificator unic cerut la linia 1953 */
+};
 
 struct panel_func {
 	int (*samsung_panel_on_pre)(struct samsung_display_driver_data *vdd);
