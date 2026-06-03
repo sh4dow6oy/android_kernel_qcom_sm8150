@@ -12,6 +12,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/sched.h>
 #include <asm/uaccess.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
